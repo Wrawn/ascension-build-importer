@@ -1,0 +1,13 @@
+{
+  "name": "ascension-build-importer-webapp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted mirror of the ascension.nie.one build planner with a one-box 'import from Darkmoon log' feature.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

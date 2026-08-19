@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Ascension Build Importer",
+  "version": "1.0.0",
+  "description": "Send a character's abilities and talents from Darkmoon Logs straight into the ascension.nie.one build planner — no manual transcribing.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://darkmoon.ascensionlogs.gg/*",
+    "https://ascension.nie.one/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Ascension Build Importer",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://darkmoon.ascensionlogs.gg/*"],
+      "js": ["content-darkmoon.js"],
+      "css": ["content-darkmoon.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "darkmoon_referer",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+services:
+  ascension-build-importer:
+    build: .
+    image: ascension-build-importer:latest
+    container_name: ascension-build-importer
+    restart: unless-stopped
+    ports:
+      # host:container — change the left side if 8787 is taken on your Unraid box.
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      # Refresh the cached builder page + catalog at most this often (ms).
+      - BUILDER_TTL_MS=21600000
+      # Override upstreams only if the sites move.
+      # - BUILDER_ORIGIN=https://ascension.nie.one
+      # - LOGS_ORIGIN=https://darkmoon.ascensionlogs.gg

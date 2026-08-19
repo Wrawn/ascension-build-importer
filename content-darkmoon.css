@@ -1,0 +1,70 @@
+#abi-open-builder-btn {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: 1px solid #d5a94e;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #1a1b20, #0c0d10);
+  color: #f2e4c4;
+  font: 600 13px/1.1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+#abi-open-builder-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+}
+#abi-open-builder-btn:active {
+  transform: translateY(0);
+}
+#abi-open-builder-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+#abi-open-builder-btn .abi-hammer {
+  color: #d5a94e;
+  font-size: 15px;
+}
+#abi-open-builder-btn.abi-busy .abi-hammer {
+  animation: abi-spin 0.9s linear infinite;
+}
+@keyframes abi-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.abi-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 70px;
+  z-index: 2147483000;
+  max-width: 340px;
+  padding: 11px 14px;
+  border-radius: 9px;
+  background: #14263a;
+  color: #dbeafe;
+  border: 1px solid #2f5c8a;
+  font: 500 12.5px/1.35 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.abi-toast.abi-show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.abi-toast.abi-toast-error {
+  background: #3a1414;
+  color: #fecaca;
+  border-color: #8a2f2f;
+}

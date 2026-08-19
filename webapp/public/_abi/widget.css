@@ -1,0 +1,117 @@
+.abi-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483000;
+  width: 340px;
+  max-width: calc(100vw - 36px);
+  padding: 14px;
+  border: 1px solid #d5a94e;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #16171c, #0c0d10);
+  color: #f2e4c4;
+  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  display: none;
+}
+.abi-panel.abi-open {
+  display: block;
+}
+.abi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.abi-title {
+  color: #d5a94e;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.abi-close {
+  border: 1px solid #3a3524;
+  background: #14151a;
+  color: #b8ad93;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+.abi-close:hover {
+  color: #f2e4c4;
+}
+.abi-row {
+  display: flex;
+  gap: 8px;
+}
+.abi-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a3524;
+  background: #101116;
+  color: #f2e4c4;
+  font-size: 13px;
+}
+.abi-input:focus {
+  outline: none;
+  border-color: #d5a94e;
+}
+.abi-go {
+  padding: 9px 12px;
+  border: 1px solid #d5a94e;
+  border-radius: 8px;
+  background: #1a1b20;
+  color: #f2e4c4;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.abi-go:hover {
+  background: #24252c;
+}
+.abi-go:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.abi-status {
+  margin-top: 9px;
+  min-height: 16px;
+  font-size: 12px;
+  color: #b8ad93;
+}
+.abi-status.abi-ok {
+  color: #86efac;
+}
+.abi-status.abi-error {
+  color: #fca5a5;
+}
+.abi-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8a8168;
+}
+.abi-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483000;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid #d5a94e;
+  background: linear-gradient(180deg, #1a1b20, #0c0d10);
+  color: #d5a94e;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.abi-fab:hover {
+  transform: translateY(-1px);
+}
+.abi-fab.abi-hidden {
+  display: none;
+}
