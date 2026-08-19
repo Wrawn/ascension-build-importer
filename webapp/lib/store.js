@@ -9,6 +9,10 @@ import { join } from "node:path";
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
 const FILE = join(DATA_DIR, "builds.json");
+// Upper bound so unauthenticated imports can't grow the file without limit.
+const MAX_BUILDS = Number(process.env.MAX_BUILDS || 2000);
+
+const clampStr = (s, n) => String(s == null ? "" : s).slice(0, n);
 
 let cache = null; // Map<key, record>
 let loading = null;
@@ -55,8 +59,15 @@ export async function recordBuild(rec) {
   // Don't let an absent label wipe a name the user set earlier.
   const patch = { ...rec };
   if (patch.label == null || patch.label === "") delete patch.label;
+  else patch.label = clampStr(patch.label, 120);
+  if (patch.name != null) patch.name = clampStr(patch.name, 80);
 
   const existing = cache.get(rec.key);
+  // Cap total distinct builds so imports can't fill the disk. Existing entries
+  // still update; only brand-new keys are refused once full.
+  if (!existing && cache.size >= MAX_BUILDS) {
+    throw new Error("Build roster is full (" + MAX_BUILDS + ").");
+  }
   if (existing) {
     Object.assign(existing, patch, {
       firstSeen: existing.firstSeen,

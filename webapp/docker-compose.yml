@@ -15,6 +15,13 @@ services:
       - DATA_DIR=/data
       # Refresh the cached builder page + catalog at most this often (ms).
       - BUILDER_TTL_MS=21600000
+      # --- Before exposing publicly, read SECURITY.md and set these ---
+      # Protects the roster (view + rename + delete). Generate a long random value.
+      # - ADMIN_TOKEN=change-me-to-a-long-random-string
+      # Keep 1 behind a reverse proxy; set 0 if the container is directly exposed.
+      # - TRUST_PROXY=1
+      # - RATE_MAX=120
+      # - MAX_BUILDS=2000
       # Override upstreams only if the sites move.
       # - BUILDER_ORIGIN=https://ascension.nie.one
       # - LOGS_ORIGIN=https://darkmoon.ascensionlogs.gg

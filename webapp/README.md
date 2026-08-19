@@ -75,6 +75,17 @@ DATA_DIR=./data node server.js    # http://localhost:8787
 | `BUILDER_TTL_MS` | `21600000` (6h) | How long to cache the builder page + catalog |
 | `BUILDER_ORIGIN` | `https://ascension.nie.one` | Upstream builder |
 | `LOGS_ORIGIN` | `https://darkmoon.ascensionlogs.gg` | Upstream logs API |
+| `ADMIN_TOKEN` | _(empty = open)_ | **Set before exposing publicly** — gates roster view + rename/delete |
+| `TRUST_PROXY` | `1` | Read `X-Forwarded-For` for rate limiting; set `0` if directly internet-facing |
+| `RATE_MAX` / `RATE_WINDOW_MS` | `120` / `60000` | Per-IP request cap per window |
+| `MAX_BUILDS` | `2000` | Cap on stored builds (disk-fill protection) |
+
+## ⚠️ Exposing it to the internet
+
+Read **[SECURITY.md](SECURITY.md)** first. In short: put an authenticating layer
+in front (Cloudflare Access / Authelia / Basic Auth), set `ADMIN_TOKEN`, and use
+HTTPS. The app rate-limits, caps storage, gates the roster behind the token, and
+locks down static/proxy paths — but access control belongs at the proxy.
 
 ## Saved builds (server-side)
 

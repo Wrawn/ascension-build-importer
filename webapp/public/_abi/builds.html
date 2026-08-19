@@ -127,13 +127,21 @@
         }[c]));
       const fmtDate = (s) => { try { return new Date(s).toLocaleString(); } catch { return s; } };
 
+      const TOKEN_KEY = "abi-admin-token";
+      const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+      function authHeaders(extra) {
+        const h = { ...(extra || {}) };
+        const t = getToken();
+        if (t) h["x-admin-token"] = t;
+        return h;
+      }
       async function api(path, body) {
         const res = await fetch(path, body ? {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: authHeaders({ "content-type": "application/json" }),
           body: JSON.stringify(body),
-        } : undefined);
-        return res.json();
+        } : { headers: authHeaders() });
+        return { status: res.status, data: await res.json().catch(() => ({})) };
       }
 
       function card(b) {
@@ -167,9 +175,9 @@
         let lastSaved = b.label || "";
         const saveLabel = async () => {
           if (input.value === lastSaved) return;
-          const r = await api("/api/builds/label", { key: b.key, label: input.value });
-          if (r.ok) { lastSaved = input.value; toast("Name saved."); }
-          else toast(r.error || "Failed to save name.", true);
+          const { data } = await api("/api/builds/label", { key: b.key, label: input.value });
+          if (data.ok) { lastSaved = input.value; toast("Name saved."); }
+          else toast(data.error || "Failed to save name.", true);
         };
         input.addEventListener("blur", saveLabel);
         input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
@@ -180,16 +188,24 @@
         });
         el.querySelector('[data-act="delete"]').addEventListener("click", async () => {
           if (!confirm(`Delete this saved build for ${b.name}?`)) return;
-          const r = await api("/api/builds/delete", { key: b.key });
-          if (r.ok) { el.remove(); toast("Deleted."); load(true); }
-          else toast(r.error || "Delete failed.", true);
+          const { data } = await api("/api/builds/delete", { key: b.key });
+          if (data.ok) { el.remove(); toast("Deleted."); load(true); }
+          else toast(data.error || "Delete failed.", true);
         });
         return el;
       }
 
       async function load(silent) {
-        const r = await api("/api/builds");
-        const builds = (r && r.builds) || [];
+        const { status, data } = await api("/api/builds");
+        if (status === 403) {
+          // Admin-protected instance: ask for the token once, then retry.
+          const t = prompt("This roster is protected. Enter the admin token:");
+          if (t) { localStorage.setItem(TOKEN_KEY, t.trim()); return load(silent); }
+          listEl.innerHTML = '<div class="empty">Admin token required to view saved builds.</div>';
+          countEl.textContent = "";
+          return;
+        }
+        const builds = (data && data.builds) || [];
         countEl.textContent = builds.length + (builds.length === 1 ? " build" : " builds");
         if (!silent) {
           listEl.innerHTML = "";
