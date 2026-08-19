@@ -1,0 +1,105 @@
+// Tiny append-on-import build store, backed by a single JSON file.
+//
+// Every successful import is recorded (upserted by character identity), so the
+// server accumulates a roster of every build anyone has imported through this
+// instance. Point DATA_DIR at a mounted volume so it survives image updates.
+
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { join } from "node:path";
+
+const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
+const FILE = join(DATA_DIR, "builds.json");
+
+let cache = null; // Map<key, record>
+let loading = null;
+let writeChain = Promise.resolve(); // serialize writes
+
+async function ensureLoaded() {
+  if (cache) return;
+  if (!loading) {
+    loading = (async () => {
+      await mkdir(DATA_DIR, { recursive: true });
+      try {
+        const txt = await readFile(FILE, "utf8");
+        const arr = JSON.parse(txt);
+        cache = new Map(arr.map((r) => [r.key, r]));
+      } catch {
+        cache = new Map(); // no file yet, or unreadable -> start fresh
+      }
+    })();
+  }
+  await loading;
+}
+
+// Atomic-ish write: write temp then rename, serialized so concurrent imports
+// don't interleave.
+function persist() {
+  writeChain = writeChain.then(async () => {
+    const arr = [...cache.values()];
+    const tmp = FILE + ".tmp";
+    await writeFile(tmp, JSON.stringify(arr, null, 2));
+    await rename(tmp, FILE);
+  });
+  return writeChain;
+}
+
+// A stable identity per character so re-imports update rather than duplicate.
+export function buildKey({ characterId, name }) {
+  if (characterId) return "id:" + characterId;
+  return "name:" + String(name || "unknown").trim().toLowerCase();
+}
+
+export async function recordBuild(rec) {
+  await ensureLoaded();
+  const now = new Date().toISOString();
+  // Don't let an absent label wipe a name the user set earlier.
+  const patch = { ...rec };
+  if (patch.label == null || patch.label === "") delete patch.label;
+
+  const existing = cache.get(rec.key);
+  if (existing) {
+    Object.assign(existing, patch, {
+      firstSeen: existing.firstSeen,
+      lastImported: now,
+      importCount: (existing.importCount || 1) + 1,
+    });
+  } else {
+    cache.set(rec.key, {
+      label: "",
+      ...patch,
+      firstSeen: now,
+      lastImported: now,
+      importCount: 1,
+    });
+  }
+  await persist();
+  return cache.get(rec.key);
+}
+
+export async function setLabel(key, label) {
+  await ensureLoaded();
+  const rec = cache.get(key);
+  if (!rec) return null;
+  rec.label = String(label || "").slice(0, 120);
+  await persist();
+  return rec;
+}
+
+export async function deleteBuild(key) {
+  await ensureLoaded();
+  const had = cache.delete(key);
+  if (had) await persist();
+  return had;
+}
+
+export async function listBuilds() {
+  await ensureLoaded();
+  return [...cache.values()].sort((a, b) =>
+    (b.lastImported || "").localeCompare(a.lastImported || "")
+  );
+}
+
+export async function getBuild(key) {
+  await ensureLoaded();
+  return cache.get(key) || null;
+}

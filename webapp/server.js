@@ -17,6 +17,13 @@ import {
   buildResult,
   parseTarget,
 } from "./lib/convert.js";
+import {
+  recordBuild,
+  listBuilds,
+  setLabel,
+  deleteBuild,
+  buildKey,
+} from "./lib/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -100,7 +107,7 @@ async function fetchCharacter(target) {
     const char = await logsFetch(
       "/api/armory/character/" + byName.character.id
     ).then((r) => r.json());
-    return { char, name: byName.character.name };
+    return { char, name: byName.character.name, id: byName.character.id };
   }
   // id path (works for hidden armories reachable via reports)
   const char = await logsFetch(
@@ -114,7 +121,7 @@ async function fetchCharacter(target) {
     (player && typeof player === "object" ? player.name : player) ||
     (char.character && char.character.name) ||
     "#" + target.value;
-  return { char, name };
+  return { char, name, id: target.value };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,9 +137,28 @@ function sendJson(res, status, obj) {
   res.end(body);
 }
 
+function readBody(req, limit = 1e6) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (c) => {
+      data += c;
+      if (data.length > limit) reject(new Error("Body too large"));
+    });
+    req.on("end", () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch {
+        reject(new Error("Invalid JSON body"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
 const STATIC_TYPES = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
 };
 
 async function serveStatic(res, name) {
@@ -182,17 +208,57 @@ const server = createServer(async (req, res) => {
 
     if (pathname === "/api/build") {
       const target = parseTarget(url.searchParams.get("target"));
-      const { char, name } = await fetchCharacter(target);
+      const { char, name, id } = await fetchCharacter(target);
       const { catalog } = await loadBuilder();
       const parsed = parseCharacter(char);
       if (!parsed.abilities.length && !parsed.talents.length) {
         throw new Error("This build has no abilities or talents selected.");
       }
-      const result = buildResult(parsed, catalog, {
-        origin: url.origin || "",
-      });
+      const result = buildResult(parsed, catalog, { origin: url.origin || "" });
       result.characterName = name;
+
+      // Persist every import so the host accumulates a roster of builds.
+      const key = buildKey({ characterId: id, name });
+      try {
+        await recordBuild({
+          key,
+          name,
+          label: (url.searchParams.get("label") || "").trim(),
+          characterId: id ? String(id) : null,
+          primaryToken: result.primaryToken,
+          abilityCount: result.abilityCount,
+          talentCount: result.talentCount,
+          abilities: parsed.abilityNames,
+          talents: parsed.talentNames,
+          flat: result.flat,
+          payload: result.payload,
+        });
+      } catch (e) {
+        console.warn("Failed to record build:", e.message);
+      }
+      result.key = key;
       return sendJson(res, 200, { ok: true, result });
+    }
+
+    if (pathname === "/api/builds" && req.method === "GET") {
+      return sendJson(res, 200, { ok: true, builds: await listBuilds() });
+    }
+
+    if (pathname === "/api/builds/label" && req.method === "POST") {
+      const body = await readBody(req);
+      const rec = await setLabel(body.key, body.label);
+      if (!rec) throw new Error("Build not found.");
+      return sendJson(res, 200, { ok: true, build: rec });
+    }
+
+    if (pathname === "/api/builds/delete" && req.method === "POST") {
+      const body = await readBody(req);
+      const removed = await deleteBuild(body.key);
+      return sendJson(res, 200, { ok: true, removed });
+    }
+
+    if (pathname === "/builds") {
+      return serveStatic(res, "builds.html");
     }
 
     if (pathname.startsWith("/_abi/")) {
@@ -211,7 +277,7 @@ const server = createServer(async (req, res) => {
     // Everything else: proxy to the real builder for its assets.
     return proxyAsset(req, res, pathname, url.search);
   } catch (err) {
-    if (pathname === "/api/build") {
+    if (pathname.startsWith("/api/")) {
       return sendJson(res, 400, { ok: false, error: err.message || String(err) });
     }
     res.writeHead(500, { "content-type": "text/plain" });

@@ -30,44 +30,40 @@ Zero runtime dependencies: Node 18+ built-ins only.
 
 ## Run it
 
-### Docker Compose (recommended)
+### From the prebuilt image (recommended — GHCR)
+
+CI publishes `ghcr.io/wrawn/ascension-build-importer:latest` on every push, so
+you don't build anything on your server and Unraid's **Update** button works.
 
 ```bash
-cd webapp
-docker compose up -d --build
+docker run -d --name ascension-build-importer --restart unless-stopped \
+  -p 8787:8787 \
+  -v /mnt/user/appdata/ascension-build-importer/data:/data \
+  ghcr.io/wrawn/ascension-build-importer:latest
 ```
 
 Then open `http://<your-server-ip>:8787/`.
 
-### Plain Docker
+> First time only: make the GHCR package **public** so the pull needs no login —
+> GitHub → your **Packages** → `ascension-build-importer` → *Package settings* →
+> *Change visibility* → **Public**. (Or `docker login ghcr.io` on the host.)
+
+**Updating:** right-click the container in Unraid's **Docker** tab → *Check for
+Updates* → *Force Update*. Your saved builds are untouched — they live in the
+mounted `/data` volume, not the image.
+
+### Docker Compose (builds locally from source)
 
 ```bash
 cd webapp
-docker build -t ascension-build-importer .
-docker run -d --name ascension-build-importer -p 8787:8787 --restart unless-stopped ascension-build-importer
+docker compose up -d --build      # uses docker-compose.yml (image + volume)
 ```
-
-### On Unraid
-
-The image needs a build step, so the easiest paths are:
-
-1. **Compose Manager plugin** (Community Applications) → add a new stack →
-   point it at this `webapp/` folder's `docker-compose.yml` → *Compose Up*. Or
-2. Build once from a terminal (`docker build -t ascension-build-importer .` in
-   this folder), then **Docker tab → Add Container**:
-   - Repository: `ascension-build-importer:latest`
-   - Network: `bridge`
-   - Port: host `8787` → container `8787`
-   - (optional) Env `BUILDER_TTL_MS`, `PORT`
-
-No volumes or database are required — the app is stateless (see *Where builds
-live* below).
 
 ### Locally without Docker
 
 ```bash
 cd webapp
-node server.js        # http://localhost:8787
+DATA_DIR=./data node server.js    # http://localhost:8787
 ```
 
 ## Configuration (env vars)
@@ -75,28 +71,40 @@ node server.js        # http://localhost:8787
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `PORT` | `8787` | Port the app listens on |
+| `DATA_DIR` | `/data` (image) | Where saved builds are persisted — mount a volume here |
 | `BUILDER_TTL_MS` | `21600000` (6h) | How long to cache the builder page + catalog |
 | `BUILDER_ORIGIN` | `https://ascension.nie.one` | Upstream builder |
 | `LOGS_ORIGIN` | `https://darkmoon.ascensionlogs.gg` | Upstream logs API |
 
-## Where builds live (and the "don't lose them" concern)
+## Saved builds (server-side)
 
-Builds you save in the planner are stored in your **browser's localStorage**,
-keyed to this app's origin (e.g. `http://your-unraid:8787`). Because you now own
-the deployment, they won't vanish if the public site changes — but they're still
-tied to the browser you use. Use the planner's own **Copy IDs** / **Copy link**
-to export any single build as a portable string.
+**Every import through this instance is saved on the server** — so if your
+friends import their builds via your URL, you get a roster of all of them.
 
-> Roadmap idea: an optional server-side "save named builds" store (survives
-> browser resets, shareable across devices). Not built yet — say the word.
+- Browse them at **`/builds`** (also linked from the import widget).
+- Each entry shows the character, ability/talent names, primary stat, and how
+  many times it's been imported. You can **rename** it (give it a friendly name),
+  **Copy IDs**, open a read-only **Preview link**, **Open in planner** (loads it
+  as an editable build), or **Delete** it.
+- The importer can also set a name at import time via the widget's *Save as…*
+  field.
+
+Data is a single JSON file at `$DATA_DIR/builds.json`. Mount `/data` to a host
+path (as in the run command above) so it survives image updates. To back it up,
+just copy that file. Individual browser-saved builds (the planner's own
+localStorage) still work too and are independent of this.
 
 ## Endpoints
 
 | Route | Purpose |
 | --- | --- |
 | `GET /` | Builder page with the import widget injected |
-| `GET /api/build?target=<name\|id\|url>` | Resolve + convert a Darkmoon build → import IDs (JSON) |
-| `GET /_abi/widget.js`, `/_abi/widget.css` | The injected widget assets |
+| `GET /api/build?target=<name\|id\|url>&label=<optional>` | Resolve + convert a Darkmoon build → import IDs, and record it (JSON) |
+| `GET /builds` | Human-friendly page listing every saved build |
+| `GET /api/builds` | All saved builds (JSON) |
+| `POST /api/builds/label` | Rename a saved build — `{ key, label }` |
+| `POST /api/builds/delete` | Delete a saved build — `{ key }` |
+| `GET /_abi/*` | The injected widget + saved-builds page assets |
 | `GET /healthz` | Liveness check (used by the Docker healthcheck) |
 | `GET /*` | Reverse-proxy to the upstream builder for its assets |
 

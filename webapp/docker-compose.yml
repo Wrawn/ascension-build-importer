@@ -7,8 +7,12 @@ services:
     ports:
       # host:container — change the left side if 8787 is taken on your Unraid box.
       - "8787:8787"
+    volumes:
+      # Saved builds persist here on the host, surviving image updates.
+      - /mnt/user/appdata/ascension-build-importer/data:/data
     environment:
       - PORT=8787
+      - DATA_DIR=/data
       # Refresh the cached builder page + catalog at most this often (ms).
       - BUILDER_TTL_MS=21600000
       # Override upstreams only if the sites move.

@@ -66,10 +66,16 @@ export function parseCharacter(charJson) {
 
   let abilities = [];
   let talents = [];
+  let abilityNames = [];
+  let talentNames = [];
   const trees = spec.talents && spec.talents.trees;
   if (trees && trees.abilities && trees.talents) {
-    abilities = (trees.abilities.talents || []).map((t) => t.entry_id);
-    talents = (trees.talents.talents || []).map((t) => t.entry_id);
+    const ab = trees.abilities.talents || [];
+    const ta = trees.talents.talents || [];
+    abilities = ab.map((t) => t.entry_id);
+    talents = ta.map((t) => t.entry_id);
+    abilityNames = ab.map((t) => t.name);
+    talentNames = ta.map((t) => t.name);
   } else if (spec.hero_build) {
     for (const key of Object.keys(spec.hero_build)) {
       const eid = spec.hero_build[key] && spec.hero_build[key].entry_id;
@@ -80,7 +86,7 @@ export function parseCharacter(charJson) {
   }
 
   const primaryToken = charJson.ci_resolved.primary_stat?.token || null;
-  return { abilities, talents, primaryToken };
+  return { abilities, talents, abilityNames, talentNames, primaryToken };
 }
 
 // Build both import formats from parsed entry ids:
@@ -126,6 +132,7 @@ export function buildResult(parsed, catalog, { origin = "" } = {}) {
 
   return {
     flat,
+    payload,
     link: origin + "/#b=" + payload,
     abilityCount: abilitySpells.length,
     talentCount: talentSpells.length,

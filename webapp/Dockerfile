@@ -8,6 +8,9 @@ COPY lib ./lib
 COPY public ./public
 
 ENV PORT=8787
+# Saved builds live here — mount a host volume at /data so they survive updates.
+ENV DATA_DIR=/data
+VOLUME ["/data"]
 EXPOSE 8787
 
 # Basic container healthcheck against the app's /healthz route.

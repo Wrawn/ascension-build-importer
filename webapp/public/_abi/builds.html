@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Saved builds — Ascension Build Importer</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: radial-gradient(circle at 20% -10%, #2a2113, #0c0d10 60%);
+        color: #f2e4c4;
+        font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        min-height: 100vh;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        max-width: 1100px;
+        margin: 0 auto 18px;
+        flex-wrap: wrap;
+      }
+      h1 { margin: 0; font-size: 20px; color: #d5a94e; }
+      a.back { color: #b8ad93; text-decoration: none; font-size: 13px; }
+      a.back:hover { color: #f2e4c4; text-decoration: underline; }
+      .count { color: #8a8168; font-size: 13px; }
+      .wrap { max-width: 1100px; margin: 0 auto; }
+      .card {
+        border: 1px solid #26241b;
+        border-radius: 12px;
+        background: #141319;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+      }
+      .row1 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .label-input {
+        flex: 1;
+        min-width: 160px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid #3a3524;
+        background: #101116;
+        color: #f2e4c4;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .label-input::placeholder { color: #6f684f; font-weight: 400; font-style: italic; }
+      .char { color: #b8ad93; font-size: 13px; white-space: nowrap; }
+      .char b { color: #f2e4c4; }
+      .meta { color: #8a8168; font-size: 12px; margin: 8px 0; }
+      .meta .pill {
+        display: inline-block;
+        border: 1px solid #2f2b1e;
+        border-radius: 999px;
+        padding: 1px 8px;
+        margin-right: 6px;
+        color: #cbb98a;
+      }
+      .lists { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 4px; }
+      .lists section { flex: 1; min-width: 220px; }
+      .lists h3 {
+        margin: 0 0 4px; font-size: 11px; text-transform: uppercase;
+        letter-spacing: 0.5px; color: #8a8168;
+      }
+      .lists div { font-size: 12.5px; color: #d8cba6; }
+      .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+      button, a.btn {
+        border: 1px solid #3a3524;
+        background: #1a1b20;
+        color: #f2e4c4;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+      }
+      button:hover, a.btn:hover { background: #24252c; }
+      a.btn.gold { border-color: #d5a94e; color: #f2e4c4; }
+      button.danger { border-color: #7f2f2f; color: #fca5a5; }
+      button.danger:hover { background: #2a1414; }
+      .empty { color: #8a8168; text-align: center; padding: 60px 0; }
+      .toast {
+        position: fixed; right: 18px; bottom: 18px; z-index: 10;
+        background: #14263a; color: #dbeafe; border: 1px solid #2f5c8a;
+        padding: 10px 14px; border-radius: 9px; font-size: 13px;
+        opacity: 0; transform: translateY(6px); transition: .15s;
+      }
+      .toast.show { opacity: 1; transform: none; }
+      .toast.err { background: #3a1414; color: #fecaca; border-color: #8a2f2f; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>⚒ Saved builds</h1>
+      <span class="count" id="count"></span>
+      <a class="back" href="/#builder">← Back to planner</a>
+    </header>
+    <div class="wrap" id="list"><div class="empty">Loading…</div></div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const listEl = document.getElementById("list");
+      const countEl = document.getElementById("count");
+      const toastEl = document.getElementById("toast");
+
+      function toast(msg, err) {
+        toastEl.textContent = msg;
+        toastEl.className = "toast show" + (err ? " err" : "");
+        clearTimeout(toastEl._t);
+        toastEl._t = setTimeout(() => (toastEl.className = "toast"), 3000);
+      }
+      const esc = (s) =>
+        String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        }[c]));
+      const fmtDate = (s) => { try { return new Date(s).toLocaleString(); } catch { return s; } };
+
+      async function api(path, body) {
+        const res = await fetch(path, body ? {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        } : undefined);
+        return res.json();
+      }
+
+      function card(b) {
+        const el = document.createElement("div");
+        el.className = "card";
+        const cap = b.primaryToken ? b.primaryToken[0].toUpperCase() + b.primaryToken.slice(1) : "—";
+        el.innerHTML = `
+          <div class="row1">
+            <input class="label-input" placeholder="Name this build…" value="${esc(b.label || "")}" />
+            <span class="char">char: <b>${esc(b.name)}</b>${b.characterId ? " · #" + esc(b.characterId) : ""}</span>
+          </div>
+          <div class="meta">
+            <span class="pill">${b.abilityCount} abilities</span>
+            <span class="pill">${b.talentCount} talents</span>
+            <span class="pill">${esc(cap)}</span>
+            <span class="pill">imported ${b.importCount}×</span>
+            last ${esc(fmtDate(b.lastImported))}
+          </div>
+          <div class="lists">
+            <section><h3>Abilities</h3><div>${esc((b.abilities || []).join(", ")) || "—"}</div></section>
+            <section><h3>Talents</h3><div>${esc((b.talents || []).join(", ")) || "—"}</div></section>
+          </div>
+          <div class="actions">
+            <a class="btn gold" href="/#saved=${encodeURIComponent(b.key)}">Open in planner</a>
+            <a class="btn" href="/#b=${esc(b.payload)}" target="_blank" rel="noopener">Preview link</a>
+            <button data-act="copy">Copy IDs</button>
+            <button class="danger" data-act="delete">Delete</button>
+          </div>`;
+
+        const input = el.querySelector(".label-input");
+        let lastSaved = b.label || "";
+        const saveLabel = async () => {
+          if (input.value === lastSaved) return;
+          const r = await api("/api/builds/label", { key: b.key, label: input.value });
+          if (r.ok) { lastSaved = input.value; toast("Name saved."); }
+          else toast(r.error || "Failed to save name.", true);
+        };
+        input.addEventListener("blur", saveLabel);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+
+        el.querySelector('[data-act="copy"]').addEventListener("click", async () => {
+          try { await navigator.clipboard.writeText(b.flat); toast("Spell IDs copied."); }
+          catch { toast("Copy failed — select manually.", true); }
+        });
+        el.querySelector('[data-act="delete"]').addEventListener("click", async () => {
+          if (!confirm(`Delete this saved build for ${b.name}?`)) return;
+          const r = await api("/api/builds/delete", { key: b.key });
+          if (r.ok) { el.remove(); toast("Deleted."); load(true); }
+          else toast(r.error || "Delete failed.", true);
+        });
+        return el;
+      }
+
+      async function load(silent) {
+        const r = await api("/api/builds");
+        const builds = (r && r.builds) || [];
+        countEl.textContent = builds.length + (builds.length === 1 ? " build" : " builds");
+        if (!silent) {
+          listEl.innerHTML = "";
+          if (!builds.length) {
+            listEl.innerHTML = '<div class="empty">No builds saved yet. Import one from the planner and it shows up here.</div>';
+            return;
+          }
+          for (const b of builds) listEl.append(card(b));
+        }
+      }
+      load();
+    </script>
+  </body>
+</html>

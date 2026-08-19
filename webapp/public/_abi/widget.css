@@ -89,10 +89,30 @@
 .abi-status.abi-error {
   color: #fca5a5;
 }
-.abi-hint {
+.abi-label {
   margin-top: 8px;
+  width: 100%;
+}
+.abi-foot {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+.abi-hint {
   font-size: 11px;
   color: #8a8168;
+  flex: 1;
+}
+.abi-saved {
+  font-size: 11.5px;
+  color: #d5a94e;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.abi-saved:hover {
+  text-decoration: underline;
 }
 .abi-fab {
   position: fixed;
