@@ -106,6 +106,15 @@ adds a new entry — but re-importing an **identical** build doesn't duplicate i
 it just bumps that entry's import count. Matching is on the build's content
 (order-independent), not on the character.
 
+**Buckets (no-login sharing).** Friends can set a **bucket** name (e.g. their
+name) in the import box; everything they import gets tagged with it. Visiting
+`/builds` without the admin token shows a "Your bucket" bar — enter the name to
+see just that bucket's builds/raids (read-only). Your admin view shows every
+build with a `bucket:` badge listing which bucket(s) imported it. There's no
+password on a bucket by design — anyone who knows the name can view it — so it's
+organization, not access control (Cloudflare Access / the reverse proxy is what
+gates who reaches the site at all).
+
 Data is a single JSON file at `$DATA_DIR/builds.json`. Mount `/data` to a host
 path (as in the run command above) so it survives image updates. To back it up,
 just copy that file. Individual browser-saved builds (the planner's own

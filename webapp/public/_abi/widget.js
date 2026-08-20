@@ -36,9 +36,10 @@
     }
   }
 
-  async function fetchBuild(target, label) {
+  async function fetchBuild(target, label, bucket) {
     let u = "/api/build?target=" + encodeURIComponent(target);
     if (label) u += "&label=" + encodeURIComponent(label);
+    if (bucket) u += "&bucket=" + encodeURIComponent(bucket);
     const res = await fetch(u);
     const data = await res.json().catch(() => ({ ok: false, error: "Bad server response." }));
     if (!res.ok || !data.ok) {
@@ -73,6 +74,15 @@
       class: "abi-input abi-label",
       placeholder: "Save as… (optional name)",
     });
+    const bucketInput = el("input", {
+      type: "text",
+      class: "abi-input abi-label",
+      placeholder: "Your bucket (e.g. your name)",
+    });
+    bucketInput.value = localStorage.getItem("abi-bucket") || "";
+    bucketInput.addEventListener("change", () =>
+      localStorage.setItem("abi-bucket", bucketInput.value.trim())
+    );
     const status = el("div", { class: "abi-status" });
     const goBtn = el("button", { class: "abi-go", type: "button" }, "Fetch build");
 
@@ -83,10 +93,12 @@
         return;
       }
       goBtn.disabled = true;
+      const bucket = bucketInput.value.trim();
+      if (bucket) localStorage.setItem("abi-bucket", bucket);
       const isReport = /\/reports\/\d+/.test(target) && !/[?&]source=\d+/.test(target);
       setStatus(status, isReport ? "Importing raid — this can take a few seconds …" : "Fetching …");
       try {
-        const data = await fetchBuild(target, labelInput.value.trim());
+        const data = await fetchBuild(target, labelInput.value.trim(), bucket);
         if (data.kind === "group") {
           const g = data.group;
           const saved = (g.members || []).filter((m) => m.saved).length;
@@ -118,7 +130,7 @@
     }
 
     goBtn.addEventListener("click", run);
-    for (const box of [input, labelInput]) {
+    for (const box of [input, labelInput, bucketInput]) {
       box.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
     }
 
@@ -139,6 +151,7 @@
       ),
       el("div", { class: "abi-row" }, input, goBtn),
       labelInput,
+      bucketInput,
       status,
       el(
         "div",

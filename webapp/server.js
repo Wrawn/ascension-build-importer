@@ -37,6 +37,7 @@ import {
   listGroups,
   setGroupLabel,
   deleteGroup,
+  normBucket,
 } from "./lib/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -233,7 +234,7 @@ async function fetchRaidRoster(reportId) {
 
 // Import an entire raid: fetch each member's build, save it, and record the
 // group with per-member role (tank / healer / dps from Darkmoon spec+role).
-async function importRaidGroup(reportId, origin) {
+async function importRaidGroup(reportId, origin, bucket = "") {
   const raid = await fetchRaidRoster(reportId);
   if (!raid.players.length) throw new Error("No players found in this report.");
   const { catalog } = await loadBuilder();
@@ -260,6 +261,7 @@ async function importRaidGroup(reportId, origin) {
       await recordBuild({
         key,
         name: pl.name,
+        bucket,
         characterId: String(pl.id),
         fingerprint: result.fingerprint,
         capturedAt,
@@ -287,6 +289,7 @@ async function importRaidGroup(reportId, origin) {
     difficulty: raid.difficulty,
     date: raid.date,
     title: raid.title,
+    bucket,
     members,
   });
 }
@@ -441,7 +444,11 @@ const server = createServer(async (req, res) => {
 
       // Whole-raid import: save every member's build + a group record.
       if (target.kind === "report") {
-        const group = await importRaidGroup(target.value, url.origin || "");
+        const group = await importRaidGroup(
+          target.value,
+          url.origin || "",
+          url.searchParams.get("bucket") || ""
+        );
         return sendJson(res, 200, { ok: true, kind: "group", group });
       }
 
@@ -471,6 +478,7 @@ const server = createServer(async (req, res) => {
           key,
           name,
           label: (url.searchParams.get("label") || "").trim(),
+          bucket: url.searchParams.get("bucket") || "",
           characterId: id ? String(id) : null,
           fingerprint: result.fingerprint,
           capturedAt,
@@ -498,6 +506,19 @@ const server = createServer(async (req, res) => {
     if (pathname === "/api/groups" && req.method === "GET") {
       if (!isAdmin(req)) return sendJson(res, 403, { ok: false, error: "admin token required" });
       return sendJson(res, 200, { ok: true, groups: await listGroups() });
+    }
+
+    // Public, name-scoped view of a friend's bucket (no login — anyone with the
+    // bucket name sees its builds; that's the intended low-friction model).
+    if (pathname === "/api/bucket" && req.method === "GET") {
+      const name = normBucket(url.searchParams.get("name"));
+      if (!name) return sendJson(res, 400, { ok: false, error: "bucket name required" });
+      const lc = name.toLowerCase();
+      const inBucket = (r) =>
+        Array.isArray(r.buckets) && r.buckets.some((b) => b.toLowerCase() === lc);
+      const builds = (await listBuilds()).filter(inBucket);
+      const groups = (await listGroups()).filter(inBucket);
+      return sendJson(res, 200, { ok: true, bucket: name, builds, groups });
     }
 
     if (pathname === "/api/groups/label" && req.method === "POST") {

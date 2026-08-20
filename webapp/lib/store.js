@@ -17,6 +17,20 @@ const MAX_GROUPS = Number(process.env.MAX_GROUPS || 300);
 
 const clampStr = (s, n) => String(s == null ? "" : s).slice(0, n);
 
+export const normBucket = (b) => clampStr(b, 40).trim();
+
+// Add a bucket name (case-insensitive, deduped, capped) to a record's list.
+function mergeBucket(list, bucket) {
+  const b = normBucket(bucket);
+  const arr = Array.isArray(list) ? list.slice() : [];
+  if (!b) return arr;
+  if (!arr.some((x) => x.toLowerCase() === b.toLowerCase())) {
+    arr.push(b);
+    while (arr.length > 20) arr.shift();
+  }
+  return arr;
+}
+
 let cache = null; // Map<key, record>
 let loading = null;
 let writeChain = Promise.resolve(); // serialize writes
@@ -65,8 +79,10 @@ export function buildKey({ characterId, name, fingerprint }) {
 export async function recordBuild(rec) {
   await ensureLoaded();
   const now = new Date().toISOString();
+  const bucket = rec.bucket; // importer's bucket (may be empty)
   // Don't let an absent label wipe a name the user set earlier.
   const patch = { ...rec };
+  delete patch.bucket; // tracked separately as buckets[]
   if (patch.label == null || patch.label === "") delete patch.label;
   else patch.label = clampStr(patch.label, 120);
   if (patch.name != null) patch.name = clampStr(patch.name, 80);
@@ -83,10 +99,12 @@ export async function recordBuild(rec) {
       lastImported: now,
       importCount: (existing.importCount || 1) + 1,
     });
+    existing.buckets = mergeBucket(existing.buckets, bucket);
   } else {
     cache.set(rec.key, {
       label: "",
       ...patch,
+      buckets: mergeBucket([], bucket),
       firstSeen: now,
       lastImported: now,
       importCount: 1,
@@ -161,21 +179,26 @@ function persistGroups() {
 export async function recordGroup(group) {
   await ensureGroupsLoaded();
   const now = new Date().toISOString();
+  const bucket = group.bucket;
+  const patch = { ...group };
+  delete patch.bucket;
   const existing = groupsCache.get(group.key);
   if (!existing && groupsCache.size >= MAX_GROUPS) {
     throw new Error("Group list is full (" + MAX_GROUPS + ").");
   }
   if (existing) {
-    Object.assign(existing, group, {
-      label: group.label != null && group.label !== "" ? group.label : existing.label,
+    Object.assign(existing, patch, {
+      label: patch.label != null && patch.label !== "" ? patch.label : existing.label,
       firstSeen: existing.firstSeen,
       lastImported: now,
       importCount: (existing.importCount || 1) + 1,
     });
+    existing.buckets = mergeBucket(existing.buckets, bucket);
   } else {
     groupsCache.set(group.key, {
       label: "",
-      ...group,
+      ...patch,
+      buckets: mergeBucket([], bucket),
       firstSeen: now,
       lastImported: now,
       importCount: 1,

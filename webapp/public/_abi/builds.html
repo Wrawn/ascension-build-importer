@@ -131,6 +131,21 @@
       .member a.btn { padding: 4px 9px; font-size: 12px; }
       .member .unavail { color: #8a6f6f; font-size: 12px; font-style: italic; }
       .glabel { max-width: 260px; }
+      .bucket-pill { border-color: #4a3d66 !important; color: #b9a7ff !important; }
+      .ro-label { font-weight: 700; color: #f2e4c4; font-size: 14px; }
+      .bbar {
+        max-width: 1100px; margin: 8px auto 4px; display: flex; align-items: center;
+        gap: 10px; flex-wrap: wrap; background: #141319; border: 1px solid #26241b;
+        border-radius: 10px; padding: 12px 14px;
+      }
+      .bbar-l { color: #b8ad93; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+      .bbar .label-input { max-width: 220px; }
+      .abi-go2 {
+        padding: 8px 14px; border: 1px solid #d5a94e; border-radius: 8px;
+        background: #1a1b20; color: #f2e4c4; font-weight: 600; font-size: 13px; cursor: pointer;
+      }
+      .abi-go2:hover { background: #24252c; }
+      .bbar .back { margin-left: auto; }
     </style>
   </head>
   <body>
@@ -140,6 +155,7 @@
       <a class="back" href="/#builder">← Back to planner</a>
     </header>
     <div class="wrap">
+      <div id="bucketbar" hidden></div>
       <div id="groups-section" hidden>
         <div class="section-h">Raid groups</div>
         <div id="groups"></div>
@@ -186,19 +202,31 @@
         return { status: res.status, data: await res.json().catch(() => ({})) };
       }
 
-      function card(b) {
+      function bucketPill(rec, show) {
+        if (!show) return "";
+        const bs = (rec.buckets || []);
+        const label = bs.length ? esc(bs.join(", ")) : "—";
+        return `<span class="pill bucket-pill">bucket: ${label}</span>`;
+      }
+
+      function card(b, opts = {}) {
+        const { readonly = false, showBucket = false } = opts;
         const el = document.createElement("div");
         el.className = "card";
         const cap = b.primaryToken ? b.primaryToken[0].toUpperCase() + b.primaryToken.slice(1) : "—";
+        const labelField = readonly
+          ? `<span class="ro-label">${esc(b.label || b.name)}</span>`
+          : `<input class="label-input" placeholder="Name this build…" value="${esc(b.label || "")}" />`;
         el.innerHTML = `
           <div class="row1">
-            <input class="label-input" placeholder="Name this build…" value="${esc(b.label || "")}" />
+            ${labelField}
             <span class="char">char: <b>${esc(b.name)}</b>${b.characterId ? " · #" + esc(b.characterId) : ""}</span>
           </div>
           <div class="meta">
             <span class="pill">${b.abilityCount} abilities</span>
             <span class="pill">${b.talentCount} talents</span>
             <span class="pill">${esc(cap)}</span>
+            ${bucketPill(b, showBucket)}
             <span class="pill">imported ${b.importCount}×</span>
             last import: ${esc(fmtDate(b.lastImported))}
             &nbsp;·&nbsp; last build update: ${b.capturedAt ? esc(fmtDate(b.capturedAt)) : "—"}
@@ -211,34 +239,37 @@
             <a class="btn gold" href="/#saved=${encodeURIComponent(b.key)}">Open in planner</a>
             <a class="btn" href="/#b=${esc(b.payload)}" target="_blank" rel="noopener">Preview link</a>
             <button data-act="copy">Copy IDs</button>
-            <button class="danger" data-act="delete">Delete</button>
+            ${readonly ? "" : '<button class="danger" data-act="delete">Delete</button>'}
           </div>`;
-
-        const input = el.querySelector(".label-input");
-        let lastSaved = b.label || "";
-        const saveLabel = async () => {
-          if (input.value === lastSaved) return;
-          const { data } = await api("/api/builds/label", { key: b.key, label: input.value });
-          if (data.ok) { lastSaved = input.value; toast("Name saved."); }
-          else toast(data.error || "Failed to save name.", true);
-        };
-        input.addEventListener("blur", saveLabel);
-        input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
 
         el.querySelector('[data-act="copy"]').addEventListener("click", async () => {
           try { await navigator.clipboard.writeText(b.flat); toast("Spell IDs copied."); }
           catch { toast("Copy failed — select manually.", true); }
         });
-        el.querySelector('[data-act="delete"]').addEventListener("click", async () => {
-          if (!confirm(`Delete this saved build for ${b.name}?`)) return;
-          const { data } = await api("/api/builds/delete", { key: b.key });
-          if (data.ok) { el.remove(); toast("Deleted."); load(true); }
-          else toast(data.error || "Delete failed.", true);
-        });
+
+        if (!readonly) {
+          const input = el.querySelector(".label-input");
+          let lastSaved = b.label || "";
+          const saveLabel = async () => {
+            if (input.value === lastSaved) return;
+            const { data } = await api("/api/builds/label", { key: b.key, label: input.value });
+            if (data.ok) { lastSaved = input.value; toast("Name saved."); }
+            else toast(data.error || "Failed to save name.", true);
+          };
+          input.addEventListener("blur", saveLabel);
+          input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+          el.querySelector('[data-act="delete"]').addEventListener("click", async () => {
+            if (!confirm(`Delete this saved build for ${b.name}?`)) return;
+            const { data } = await api("/api/builds/delete", { key: b.key });
+            if (data.ok) { el.remove(); toast("Deleted."); load(true); }
+            else toast(data.error || "Delete failed.", true);
+          });
+        }
         return el;
       }
 
-      function groupCard(g) {
+      function groupCard(g, opts = {}) {
+        const { readonly = false, showBucket = false } = opts;
         const el = document.createElement("div");
         el.className = "card gcard";
         const members = g.members || [];
@@ -264,6 +295,7 @@
             <span class="pill">${h.length} healer</span>
             <span class="pill">${d.length} dps</span>
             <span class="pill">${saved} builds saved</span>
+            ${bucketPill(g, showBucket)}
             last import: ${esc(fmtDate(g.lastImported))}
           </div>
           <div class="gmembers"></div>`;
@@ -292,62 +324,112 @@
         roleBlock("Healers", "healer", h);
         roleBlock("DPS", "dps", d);
 
-        const actions = document.createElement("div");
-        actions.className = "actions";
-        actions.innerHTML =
-          `<input class="glabel label-input" placeholder="Name this raid…" value="${esc(g.label || "")}" />` +
-          `<button class="danger" data-act="gdelete">Delete group</button>`;
-        mwrap.append(actions);
-
         el.querySelector(".ghead").addEventListener("click", () => el.classList.toggle("open"));
 
-        const gi = actions.querySelector(".glabel");
-        let last = g.label || "";
-        const save = async () => {
-          if (gi.value === last) return;
-          const { data } = await api("/api/groups/label", { key: g.key, label: gi.value });
-          if (data.ok) { last = gi.value; toast("Group name saved."); }
-          else toast(data.error || "Failed to save name.", true);
-        };
-        gi.addEventListener("blur", save);
-        gi.addEventListener("keydown", (e) => { if (e.key === "Enter") gi.blur(); });
+        if (!readonly) {
+          const actions = document.createElement("div");
+          actions.className = "actions";
+          actions.innerHTML =
+            `<input class="glabel label-input" placeholder="Name this raid…" value="${esc(g.label || "")}" />` +
+            `<button class="danger" data-act="gdelete">Delete group</button>`;
+          mwrap.append(actions);
 
-        actions.querySelector('[data-act="gdelete"]').addEventListener("click", async () => {
-          if (!confirm(`Delete the raid group "${title}"? (The individual builds stay.)`)) return;
-          const { data } = await api("/api/groups/delete", { key: g.key });
-          if (data.ok) { el.remove(); toast("Group deleted."); load(true); }
-          else toast(data.error || "Delete failed.", true);
-        });
+          const gi = actions.querySelector(".glabel");
+          let last = g.label || "";
+          const save = async () => {
+            if (gi.value === last) return;
+            const { data } = await api("/api/groups/label", { key: g.key, label: gi.value });
+            if (data.ok) { last = gi.value; toast("Group name saved."); }
+            else toast(data.error || "Failed to save name.", true);
+          };
+          gi.addEventListener("blur", save);
+          gi.addEventListener("keydown", (e) => { if (e.key === "Enter") gi.blur(); });
+
+          actions.querySelector('[data-act="gdelete"]').addEventListener("click", async () => {
+            if (!confirm(`Delete the raid group "${title}"? (The individual builds stay.)`)) return;
+            const { data } = await api("/api/groups/delete", { key: g.key });
+            if (data.ok) { el.remove(); toast("Group deleted."); load(true); }
+            else toast(data.error || "Delete failed.", true);
+          });
+        }
         return el;
+      }
+
+      function renderLists(builds, groups, opts) {
+        groupsSection.hidden = groups.length === 0;
+        groupsEl.innerHTML = "";
+        for (const g of groups) groupsEl.append(groupCard(g, opts));
+        buildsH.hidden = builds.length === 0;
+        listEl.innerHTML = "";
+        for (const b of builds) listEl.append(card(b, opts));
       }
 
       async function load(silent) {
         const [bRes, gRes] = await Promise.all([api("/api/builds"), api("/api/groups")]);
-        if (bRes.status === 403 || gRes.status === 403) {
-          const t = prompt("This roster is protected. Enter the admin token:");
-          if (t) { localStorage.setItem(TOKEN_KEY, t.trim()); return load(silent); }
-          listEl.innerHTML = '<div class="empty">Admin token required to view saved builds.</div>';
-          countEl.textContent = "";
-          return;
-        }
+        if (bRes.status === 403 || gRes.status === 403) return bucketMode(silent);
+
+        document.getElementById("bucketbar").hidden = true;
         const builds = (bRes.data && bRes.data.builds) || [];
         const groups = (gRes.data && gRes.data.groups) || [];
         countEl.textContent =
           builds.length + (builds.length === 1 ? " build" : " builds") +
           (groups.length ? " · " + groups.length + " raid" + (groups.length === 1 ? "" : "s") : "");
         if (silent) return;
-
-        groupsSection.hidden = groups.length === 0;
-        groupsEl.innerHTML = "";
-        for (const g of groups) groupsEl.append(groupCard(g));
-
-        buildsH.hidden = builds.length === 0;
-        listEl.innerHTML = "";
+        renderLists(builds, groups, { readonly: false, showBucket: true });
         if (!builds.length && !groups.length) {
           listEl.innerHTML = '<div class="empty">Nothing saved yet. Import a character, or paste a report link to save a whole raid.</div>';
-          return;
         }
-        for (const b of builds) listEl.append(card(b));
+      }
+
+      // Friend view: no admin token — show only the builds tagged with a bucket
+      // name they type (remembered per browser). No login by design.
+      async function bucketMode(silent) {
+        const bar = document.getElementById("bucketbar");
+        const stored = localStorage.getItem("abi-bucket") || "";
+        bar.hidden = false;
+        bar.innerHTML =
+          `<div class="bbar">` +
+          `<span class="bbar-l">Your bucket</span>` +
+          `<input id="bkin" class="label-input" placeholder="e.g. your name" value="${esc(stored)}" />` +
+          `<button id="bkgo" class="abi-go2">View my builds</button>` +
+          `<a id="adminlink" class="back">I'm the admin →</a>` +
+          `</div>`;
+
+        const input = document.getElementById("bkin");
+        const go = async () => {
+          const name = input.value.trim();
+          if (!name) {
+            countEl.textContent = "";
+            groupsSection.hidden = true;
+            listEl.innerHTML = '<div class="empty">Enter your bucket name above to see your saved builds.</div>';
+            return;
+          }
+          localStorage.setItem("abi-bucket", name);
+          const res = await fetch("/api/bucket?name=" + encodeURIComponent(name));
+          const data = await res.json().catch(() => ({}));
+          const builds = data.builds || [], groups = data.groups || [];
+          countEl.textContent =
+            'bucket "' + name + '": ' + builds.length + (builds.length === 1 ? " build" : " builds") +
+            (groups.length ? " · " + groups.length + " raid" + (groups.length === 1 ? "" : "s") : "");
+          renderLists(builds, groups, { readonly: true, showBucket: false });
+          if (!builds.length && !groups.length) {
+            listEl.innerHTML =
+              '<div class="empty">Nothing in bucket “' + esc(name) +
+              '” yet. In the planner, set this bucket in the import box and import a build.</div>';
+          }
+        };
+        document.getElementById("bkgo").addEventListener("click", go);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+        document.getElementById("adminlink").addEventListener("click", () => {
+          const t = prompt("Enter the admin token:");
+          if (t) { localStorage.setItem(TOKEN_KEY, t.trim()); load(); }
+        });
+
+        if (stored) go();
+        else {
+          countEl.textContent = "";
+          listEl.innerHTML = '<div class="empty">Enter your bucket name above to see your saved builds.</div>';
+        }
       }
       load();
     </script>
