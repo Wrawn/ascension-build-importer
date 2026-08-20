@@ -5,6 +5,7 @@ const goBtn = document.getElementById("go");
 const statusEl = document.getElementById("status");
 const catalogInfo = document.getElementById("catalog-info");
 const refreshLink = document.getElementById("refresh");
+const webappInput = document.getElementById("webapp");
 
 function setStatus(text, kind) {
   statusEl.textContent = text || "";
@@ -35,12 +36,34 @@ function parseInput(raw) {
 }
 
 async function submit() {
-  const target = parseInput(nameInput.value);
-  if (!target) {
+  const raw = nameInput.value.trim();
+  if (!raw) {
     setStatus("Enter a character name, id, or armory/report URL.", "error");
     return;
   }
+  const webappUrl = (webappInput.value || "").trim();
   goBtn.disabled = true;
+
+  // If a self-hosted builder is configured, send it there (saved on your site).
+  if (webappUrl) {
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        type: "openImport",
+        webappUrl,
+        target: raw,
+      });
+      if (!resp || !resp.ok) throw new Error(resp && resp.error ? resp.error : "Failed.");
+      setStatus("Sent to your builder ↗", "ok");
+      setTimeout(() => window.close(), 700);
+    } catch (err) {
+      setStatus(err.message || "Something went wrong.", "error");
+    } finally {
+      goBtn.disabled = false;
+    }
+    return;
+  }
+
+  const target = parseInput(raw);
   setStatus("Fetching " + target.label + "…");
   try {
     const resp = await chrome.runtime.sendMessage(
@@ -102,6 +125,16 @@ refreshLink.addEventListener("click", async () => {
   } else {
     catalogInfo.textContent = "Catalog: refresh failed";
   }
+});
+
+// Persist the self-hosted builder URL (synced across the user's browsers).
+chrome.storage.sync.get("webappUrl").then((cfg) => {
+  if (cfg.webappUrl) webappInput.value = cfg.webappUrl;
+});
+webappInput.addEventListener("change", () => {
+  const v = webappInput.value.trim().replace(/\/+$/, "");
+  webappInput.value = v;
+  chrome.storage.sync.set({ webappUrl: v });
 });
 
 loadCatalogStatus();

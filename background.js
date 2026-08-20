@@ -292,6 +292,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === "catalogStatus") {
         const stored = (await chrome.storage.local.get(CATALOG_KEY))[CATALOG_KEY];
         sendResponse({ ok: true, catalog: stored || null });
+      } else if (msg.type === "openImport") {
+        // Send a Darkmoon link to the user's self-hosted webapp, which fetches,
+        // converts, saves it to their roster, and loads it in their planner.
+        const base = String(msg.webappUrl || "").replace(/\/+$/, "");
+        if (!base) throw new Error("No builder URL configured.");
+        const url = base + "/#import=" + encodeURIComponent(msg.target);
+        await chrome.tabs.create({ url });
+        sendResponse({ ok: true });
       } else {
         sendResponse({ ok: false, error: "Unknown request." });
       }

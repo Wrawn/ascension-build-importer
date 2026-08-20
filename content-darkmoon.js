@@ -49,8 +49,8 @@
     btn.disabled = busy;
     btn.classList.toggle("abi-busy", busy);
     btn.querySelector(".abi-label").textContent = busy
-      ? "Building…"
-      : "Open in Ascension Builder";
+      ? "Sending…"
+      : btn.dataset.idleLabel || "Open in Ascension Builder";
   }
 
   // Fetch the character capture JSON for the current target.
@@ -84,6 +84,23 @@
     if (!target) return;
     setBusy(btn, true);
     try {
+      // If a self-hosted builder is configured, send the full Darkmoon URL to it
+      // (it fetches + converts + saves server-side, honoring realm/encounter).
+      const cfg = await chrome.storage.sync.get("webappUrl");
+      if (cfg.webappUrl) {
+        const resp = await chrome.runtime.sendMessage({
+          type: "openImport",
+          webappUrl: cfg.webappUrl,
+          target: location.href,
+        });
+        if (!resp || !resp.ok) {
+          throw new Error(resp && resp.error ? resp.error : "Failed to send.");
+        }
+        toast("Sent to your builder ↗ — saving & loading it there.", false);
+        return;
+      }
+
+      // Fallback: convert locally and open the public builder.
       const char = await fetchCapture(target);
       const resp = await chrome.runtime.sendMessage({
         type: "convertPayload",
@@ -132,6 +149,14 @@
       '<span class="abi-label">Open in Ascension Builder</span>';
     btn.addEventListener("click", () => onClick(btn));
     document.body.appendChild(btn);
+
+    // Label reflects whether a self-hosted builder is configured.
+    chrome.storage.sync.get("webappUrl").then((cfg) => {
+      const label = cfg.webappUrl ? "Send to my Builder" : "Open in Ascension Builder";
+      btn.dataset.idleLabel = label;
+      const l = btn.querySelector(".abi-label");
+      if (l && !btn.disabled) l.textContent = label;
+    });
   }
 
   // React to SPA navigation (Darkmoon is a single-page app; report pages change

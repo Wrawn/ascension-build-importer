@@ -178,23 +178,36 @@
     document.body.append(panel, fab);
     show(true); // start open so the feature is discoverable
 
-    // Deep link from the Saved builds page: /#saved=<key> loads that build.
-    async function handleSavedHash() {
-      const m = location.hash.match(/^#saved=(.+)$/);
-      if (!m) return;
-      const key = decodeURIComponent(m[1]);
-      history.replaceState(null, "", location.pathname + "#builder");
-      show(true);
-      setStatus(status, "Loading saved build …");
-      try {
-        const rec = await loadSaved(key);
-        setStatus(status, "Loaded saved build: " + (rec.label || rec.name) + ".", "ok");
-      } catch (err) {
-        setStatus(status, err.message || "Could not load saved build.", "error");
+    // Deep links:
+    //   #saved=<key>     load a saved build into the planner
+    //   #import=<target> import a Darkmoon link/name (the browser extension uses
+    //                    this to send a build straight to this instance)
+    async function handleHash() {
+      const saved = location.hash.match(/^#saved=(.+)$/);
+      if (saved) {
+        const key = decodeURIComponent(saved[1]);
+        history.replaceState(null, "", location.pathname + "#builder");
+        show(true);
+        setStatus(status, "Loading saved build …");
+        try {
+          const rec = await loadSaved(key);
+          setStatus(status, "Loaded saved build: " + (rec.label || rec.name) + ".", "ok");
+        } catch (err) {
+          setStatus(status, err.message || "Could not load saved build.", "error");
+        }
+        return;
+      }
+      const imp = location.hash.match(/^#import=(.+)$/);
+      if (imp) {
+        const target = decodeURIComponent(imp[1]);
+        history.replaceState(null, "", location.pathname + "#builder");
+        show(true);
+        input.value = target;
+        run(); // fetch + save server-side, then load into the planner
       }
     }
-    window.addEventListener("hashchange", handleSavedHash);
-    handleSavedHash();
+    window.addEventListener("hashchange", handleHash);
+    handleHash();
   }
 
   if (document.readyState === "loading") {
