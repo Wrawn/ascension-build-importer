@@ -6,6 +6,7 @@
 
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
 const FILE = join(DATA_DIR, "builds.json");
@@ -47,10 +48,16 @@ function persist() {
   return writeChain;
 }
 
-// A stable identity per character so re-imports update rather than duplicate.
-export function buildKey({ characterId, name }) {
-  if (characterId) return "id:" + characterId;
-  return "name:" + String(name || "unknown").trim().toLowerCase();
+// Identity = character + build content. A character can have several distinct
+// builds (respecs); re-importing an *identical* build lands on the same key and
+// updates rather than duplicating.
+export function buildKey({ characterId, name, fingerprint }) {
+  const who = characterId
+    ? "id:" + characterId
+    : "name:" + String(name || "unknown").trim().toLowerCase();
+  if (!fingerprint) return who;
+  const fp = createHash("sha1").update(String(fingerprint)).digest("hex").slice(0, 12);
+  return who + "#" + fp;
 }
 
 export async function recordBuild(rec) {

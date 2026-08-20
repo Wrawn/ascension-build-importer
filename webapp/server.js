@@ -301,13 +301,20 @@ const server = createServer(async (req, res) => {
       const result = buildResult(parsed, catalog, { origin: url.origin || "" });
       result.characterName = name;
 
-      const key = buildKey({ characterId: id, name });
+      // Key by character + build content: distinct builds (respecs) each get
+      // their own entry; an identical re-import updates the existing one.
+      const key = buildKey({
+        characterId: id,
+        name,
+        fingerprint: result.fingerprint,
+      });
       try {
         await recordBuild({
           key,
           name,
           label: (url.searchParams.get("label") || "").trim(),
           characterId: id ? String(id) : null,
+          fingerprint: result.fingerprint,
           primaryToken: result.primaryToken,
           abilityCount: result.abilityCount,
           talentCount: result.talentCount,

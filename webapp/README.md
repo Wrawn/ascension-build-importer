@@ -100,6 +100,12 @@ friends import their builds via your URL, you get a roster of all of them.
 - The importer can also set a name at import time via the widget's *Save as…*
   field.
 
+**One entry per distinct build.** A character can have several builds saved (each
+respec is a different ability/talent/primary set), so importing a changed build
+adds a new entry — but re-importing an **identical** build doesn't duplicate it,
+it just bumps that entry's import count. Matching is on the build's content
+(order-independent), not on the character.
+
 Data is a single JSON file at `$DATA_DIR/builds.json`. Mount `/data` to a host
 path (as in the run command above) so it survives image updates. To back it up,
 just copy that file. Individual browser-saved builds (the planner's own

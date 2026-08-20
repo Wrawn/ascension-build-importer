@@ -130,9 +130,18 @@ export function buildResult(parsed, catalog, { origin = "" } = {}) {
     "~" +
     talentSpells.map(b36).join(".");
 
+  // Canonical fingerprint of the build's *content* (order-independent) so two
+  // imports of the same build match, but a respec of the same character differs.
+  const canon = (arr) => [...arr].map(Number).sort((a, b) => a - b).join(".");
+  const fingerprint =
+    (primarySpell != null ? primarySpell : "") +
+    "~" + canon(abilitySpells) +
+    "~" + canon(talentSpells);
+
   return {
     flat,
     payload,
+    fingerprint,
     link: origin + "/#b=" + payload,
     abilityCount: abilitySpells.length,
     talentCount: talentSpells.length,
