@@ -155,6 +155,10 @@ async function fetchCharacter(target) {
 
 function clientIp(req) {
   if (TRUST_PROXY) {
+    // Behind Cloudflare's proxy this is the authoritative client IP and can't
+    // be spoofed by the client; prefer it, then fall back to X-Forwarded-For.
+    const cf = req.headers["cf-connecting-ip"];
+    if (cf) return String(cf).trim();
     const xff = req.headers["x-forwarded-for"];
     if (xff) return String(xff).split(",")[0].trim();
   }

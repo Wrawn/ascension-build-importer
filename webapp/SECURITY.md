@@ -22,6 +22,26 @@ access control properly:
 Any of these means only your people can reach the app, which by itself neutralizes
 most of the risk (roster tampering, abuse, scraping).
 
+#### Reverse proxy only (no Access) — the minimal setup
+
+If you just reverse-proxy it behind **Cloudflare's proxied DNS (orange cloud)**
+to hide your home IP, that's a reasonable middle ground — but note there's then
+**no login**, so anyone with the URL can open the planner and import. That's
+acceptable here because:
+
+- the **roster is still protected** by `ADMIN_TOKEN` (view/rename/delete);
+- imports are **rate-limited** and the store is **capped**, so the worst a
+  stranger can do is add a few builds you can delete.
+
+Make it friends-only cheaply with **HTTP Basic Auth at the reverse proxy**
+(NPM/SWAG: one setting, one shared password) — no Zero Trust required.
+
+Cloudflare tips for this setup: keep the record **Proxied** (orange cloud) to
+hide the origin IP; set **SSL/TLS mode to Full** (or Full-strict) so the
+Cloudflare→origin leg is encrypted, not "Flexible"; optionally add a Cloudflare
+**Rate Limiting** or WAF rule. The app reads `CF-Connecting-IP`, so its own
+rate limiting keys on the real visitor even behind Cloudflare.
+
 ### 2. Set an admin token
 
 Set `ADMIN_TOKEN` to a long random string. Then:
