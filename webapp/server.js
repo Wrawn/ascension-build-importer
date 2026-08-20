@@ -312,6 +312,11 @@ const server = createServer(async (req, res) => {
         name,
         fingerprint: result.fingerprint,
       });
+      // When Darkmoon captured/parsed this build (vs. when we imported it).
+      const capturedAt =
+        (char.capture && char.capture.captured_at) ||
+        (char.ci_resolved && char.ci_resolved.captured_at) ||
+        null;
       try {
         await recordBuild({
           key,
@@ -319,6 +324,7 @@ const server = createServer(async (req, res) => {
           label: (url.searchParams.get("label") || "").trim(),
           characterId: id ? String(id) : null,
           fingerprint: result.fingerprint,
+          capturedAt,
           primaryToken: result.primaryToken,
           abilityCount: result.abilityCount,
           talentCount: result.talentCount,

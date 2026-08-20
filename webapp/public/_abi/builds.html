@@ -158,7 +158,8 @@
             <span class="pill">${b.talentCount} talents</span>
             <span class="pill">${esc(cap)}</span>
             <span class="pill">imported ${b.importCount}×</span>
-            last ${esc(fmtDate(b.lastImported))}
+            last import: ${esc(fmtDate(b.lastImported))}
+            &nbsp;·&nbsp; last build update: ${b.capturedAt ? esc(fmtDate(b.capturedAt)) : "—"}
           </div>
           <div class="lists">
             <section><h3>Abilities</h3><div>${esc((b.abilities || []).join(", ")) || "—"}</div></section>
