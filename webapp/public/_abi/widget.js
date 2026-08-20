@@ -44,7 +44,7 @@
     if (!res.ok || !data.ok) {
       throw new Error(data && data.error ? data.error : "Request failed.");
     }
-    return data.result;
+    return data; // { kind: "build"|"group", result? , group? }
   }
 
   // Load a previously-saved build (by key) into the planner. The roster may be
@@ -83,9 +83,25 @@
         return;
       }
       goBtn.disabled = true;
-      setStatus(status, "Fetching …");
+      const isReport = /\/reports\/\d+/.test(target) && !/[?&]source=\d+/.test(target);
+      setStatus(status, isReport ? "Importing raid — this can take a few seconds …" : "Fetching …");
       try {
-        const r = await fetchBuild(target, labelInput.value.trim());
+        const data = await fetchBuild(target, labelInput.value.trim());
+        if (data.kind === "group") {
+          const g = data.group;
+          const saved = (g.members || []).filter((m) => m.saved).length;
+          const t = (g.members || []).filter((m) => m.role === "tank").length;
+          const h = (g.members || []).filter((m) => m.role === "healer").length;
+          const d = (g.members || []).filter((m) => m.role === "dps").length;
+          setStatus(
+            status,
+            "Saved raid " + (g.zone || "group") + ": " + saved + " builds " +
+              "(" + t + " tank, " + h + " healer, " + d + " dps). See Saved builds →",
+            "ok"
+          );
+          return;
+        }
+        const r = data.result;
         importFlat(r.flat);
         let msg =
           "Loaded " + r.characterName + ": " +

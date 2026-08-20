@@ -150,18 +150,37 @@ export function buildResult(parsed, catalog, { origin = "" } = {}) {
   };
 }
 
-// Interpret a free-form target (name, id, armory URL, or report URL with
-// ?source=id) into { kind: "id"|"name", value }.
+// Interpret a free-form target into { kind, value }:
+//   - "id"     single character (report link with ?source=, or a bare number)
+//   - "report" whole-raid group import (a /reports/<id> link with no ?source=)
+//   - "name"   character name / armory URL
 export function parseTarget(raw) {
   const value = String(raw || "").trim();
   if (!value) throw new Error("Enter a character name, id, or Darkmoon link.");
 
+  // A specific player in a report → single character.
   const sourceMatch = value.match(/[?&]source=(\d+)/i);
   if (sourceMatch) return { kind: "id", value: sourceMatch[1] };
+
+  // A report link with no player selected → import the whole raid as a group.
+  const reportMatch = value.match(/\/reports\/(\d+)/i);
+  if (reportMatch) return { kind: "report", value: reportMatch[1] };
 
   const armoryMatch = value.match(/armory\/([^/?#]+)/i);
   if (armoryMatch) return { kind: "name", value: decodeURIComponent(armoryMatch[1]) };
 
   if (/^\d+$/.test(value)) return { kind: "id", value };
   return { kind: "name", value };
+}
+
+// Map a Darkmoon participant's spec/role to a build role. The character's *spec*
+// is the reliable signal (e.g. "Agility Tank", "Healing"); the per-encounter
+// `role` flag is noisy (a dps who off-tanks one fight shows role "Tank"), so we
+// only fall back to it when the spec carries no tank/heal signal.
+export function roleFromSpec(spec, role) {
+  const s = String(spec || "");
+  if (/heal/i.test(s)) return "healer";
+  if (/tank/i.test(s)) return "tank";
+  if (!s && /tank/i.test(String(role || ""))) return "tank";
+  return "dps";
 }

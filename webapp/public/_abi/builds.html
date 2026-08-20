@@ -99,6 +99,38 @@
       }
       .toast.show { opacity: 1; transform: none; }
       .toast.err { background: #3a1414; color: #fecaca; border-color: #8a2f2f; }
+      .section-h {
+        max-width: 1100px; margin: 22px auto 10px; font-size: 13px;
+        text-transform: uppercase; letter-spacing: 1px; color: #8a8168;
+        border-bottom: 1px solid #26241b; padding-bottom: 6px;
+      }
+      .gcard { border: 1px solid #3a3524; border-left: 3px solid #d5a94e; }
+      .ghead { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+      .gtitle { font-weight: 700; color: #f2e4c4; font-size: 15px; }
+      .gsub { color: #b8ad93; font-size: 12.5px; }
+      .gcaret { color: #d5a94e; transition: transform .15s; margin-left: auto; font-size: 12px; }
+      .gcard.open .gcaret { transform: rotate(90deg); }
+      .gcounts .pill { border-color: #3a3524; }
+      .gmembers { margin-top: 12px; display: none; }
+      .gcard.open .gmembers { display: block; }
+      .rolegrp { margin-top: 10px; }
+      .rolegrp h4 {
+        margin: 0 0 6px; font-size: 11px; letter-spacing: .6px; text-transform: uppercase;
+      }
+      .rolegrp.tank h4 { color: #9ec5ff; }
+      .rolegrp.healer h4 { color: #86efac; }
+      .rolegrp.dps h4 { color: #fca5a5; }
+      .member {
+        display: flex; align-items: center; gap: 10px; padding: 5px 8px;
+        border-radius: 7px;
+      }
+      .member:hover { background: #1b1c22; }
+      .member .mname { font-weight: 600; min-width: 150px; }
+      .member .mspec { color: #8a8168; font-size: 12px; flex: 1; }
+      .member .mcount { color: #b8ad93; font-size: 12px; }
+      .member a.btn { padding: 4px 9px; font-size: 12px; }
+      .member .unavail { color: #8a6f6f; font-size: 12px; font-style: italic; }
+      .glabel { max-width: 260px; }
     </style>
   </head>
   <body>
@@ -107,13 +139,23 @@
       <span class="count" id="count"></span>
       <a class="back" href="/#builder">← Back to planner</a>
     </header>
-    <div class="wrap" id="list"><div class="empty">Loading…</div></div>
+    <div class="wrap">
+      <div id="groups-section" hidden>
+        <div class="section-h">Raid groups</div>
+        <div id="groups"></div>
+      </div>
+      <div class="section-h" id="builds-h" hidden>Builds</div>
+      <div id="list"><div class="empty">Loading…</div></div>
+    </div>
     <div class="toast" id="toast"></div>
 
     <script>
       const listEl = document.getElementById("list");
       const countEl = document.getElementById("count");
       const toastEl = document.getElementById("toast");
+      const groupsEl = document.getElementById("groups");
+      const groupsSection = document.getElementById("groups-section");
+      const buildsH = document.getElementById("builds-h");
 
       function toast(msg, err) {
         toastEl.textContent = msg;
@@ -196,26 +238,116 @@
         return el;
       }
 
+      function groupCard(g) {
+        const el = document.createElement("div");
+        el.className = "card gcard";
+        const members = g.members || [];
+        const byRole = (r) => members.filter((m) => m.role === r);
+        const t = byRole("tank"), h = byRole("healer"), d = byRole("dps");
+        const saved = members.filter((m) => m.saved).length;
+        const date = g.date ? fmtDate(g.date).split(",")[0] : "";
+        const diff = g.difficulty ? g.difficulty[0].toUpperCase() + g.difficulty.slice(1) : "";
+        const title = g.label || ((g.zone || "Raid") + (date ? " — " + date : ""));
+        const subParts = [diff, g.title, "report #" + g.reportId].filter(Boolean);
+
+        el.innerHTML = `
+          <div class="ghead">
+            <div>
+              <div class="gtitle">${esc(title)}</div>
+              <div class="gsub">${esc(subParts.join(" · "))}</div>
+            </div>
+            <span class="gcaret">▶</span>
+          </div>
+          <div class="meta gcounts">
+            <span class="pill">${members.length} players</span>
+            <span class="pill">${t.length} tank</span>
+            <span class="pill">${h.length} healer</span>
+            <span class="pill">${d.length} dps</span>
+            <span class="pill">${saved} builds saved</span>
+            last import: ${esc(fmtDate(g.lastImported))}
+          </div>
+          <div class="gmembers"></div>`;
+
+        const mwrap = el.querySelector(".gmembers");
+        const roleBlock = (label, cls, list) => {
+          if (!list.length) return;
+          const sec = document.createElement("div");
+          sec.className = "rolegrp " + cls;
+          sec.innerHTML = `<h4>${label} (${list.length})</h4>`;
+          for (const m of list) {
+            const row = document.createElement("div");
+            row.className = "member";
+            const action = m.saved
+              ? `<a class="btn gold" href="/#saved=${encodeURIComponent(m.buildKey)}">Open in planner</a>`
+              : `<span class="unavail">no build captured</span>`;
+            const counts = m.saved ? `<span class="mcount">${m.abilityCount}/${m.talentCount}</span>` : "";
+            row.innerHTML =
+              `<span class="mname">${esc(m.name)}</span>` +
+              `<span class="mspec">${esc(m.spec || "")}</span>${counts}${action}`;
+            sec.append(row);
+          }
+          mwrap.append(sec);
+        };
+        roleBlock("Tanks", "tank", t);
+        roleBlock("Healers", "healer", h);
+        roleBlock("DPS", "dps", d);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        actions.innerHTML =
+          `<input class="glabel label-input" placeholder="Name this raid…" value="${esc(g.label || "")}" />` +
+          `<button class="danger" data-act="gdelete">Delete group</button>`;
+        mwrap.append(actions);
+
+        el.querySelector(".ghead").addEventListener("click", () => el.classList.toggle("open"));
+
+        const gi = actions.querySelector(".glabel");
+        let last = g.label || "";
+        const save = async () => {
+          if (gi.value === last) return;
+          const { data } = await api("/api/groups/label", { key: g.key, label: gi.value });
+          if (data.ok) { last = gi.value; toast("Group name saved."); }
+          else toast(data.error || "Failed to save name.", true);
+        };
+        gi.addEventListener("blur", save);
+        gi.addEventListener("keydown", (e) => { if (e.key === "Enter") gi.blur(); });
+
+        actions.querySelector('[data-act="gdelete"]').addEventListener("click", async () => {
+          if (!confirm(`Delete the raid group "${title}"? (The individual builds stay.)`)) return;
+          const { data } = await api("/api/groups/delete", { key: g.key });
+          if (data.ok) { el.remove(); toast("Group deleted."); load(true); }
+          else toast(data.error || "Delete failed.", true);
+        });
+        return el;
+      }
+
       async function load(silent) {
-        const { status, data } = await api("/api/builds");
-        if (status === 403) {
-          // Admin-protected instance: ask for the token once, then retry.
+        const [bRes, gRes] = await Promise.all([api("/api/builds"), api("/api/groups")]);
+        if (bRes.status === 403 || gRes.status === 403) {
           const t = prompt("This roster is protected. Enter the admin token:");
           if (t) { localStorage.setItem(TOKEN_KEY, t.trim()); return load(silent); }
           listEl.innerHTML = '<div class="empty">Admin token required to view saved builds.</div>';
           countEl.textContent = "";
           return;
         }
-        const builds = (data && data.builds) || [];
-        countEl.textContent = builds.length + (builds.length === 1 ? " build" : " builds");
-        if (!silent) {
-          listEl.innerHTML = "";
-          if (!builds.length) {
-            listEl.innerHTML = '<div class="empty">No builds saved yet. Import one from the planner and it shows up here.</div>';
-            return;
-          }
-          for (const b of builds) listEl.append(card(b));
+        const builds = (bRes.data && bRes.data.builds) || [];
+        const groups = (gRes.data && gRes.data.groups) || [];
+        countEl.textContent =
+          builds.length + (builds.length === 1 ? " build" : " builds") +
+          (groups.length ? " · " + groups.length + " raid" + (groups.length === 1 ? "" : "s") : "");
+        if (silent) return;
+
+        groupsSection.hidden = groups.length === 0;
+        groupsEl.innerHTML = "";
+        for (const g of groups) groupsEl.append(groupCard(g));
+
+        buildsH.hidden = builds.length === 0;
+        listEl.innerHTML = "";
+        if (!builds.length && !groups.length) {
+          listEl.innerHTML = '<div class="empty">Nothing saved yet. Import a character, or paste a report link to save a whole raid.</div>';
+          return;
         }
+        for (const b of builds) listEl.append(card(b));
       }
       load();
     </script>

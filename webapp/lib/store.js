@@ -10,8 +10,10 @@ import { createHash } from "node:crypto";
 
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
 const FILE = join(DATA_DIR, "builds.json");
-// Upper bound so unauthenticated imports can't grow the file without limit.
+const GROUPS_FILE = join(DATA_DIR, "groups.json");
+// Upper bounds so unauthenticated imports can't grow the files without limit.
 const MAX_BUILDS = Number(process.env.MAX_BUILDS || 2000);
+const MAX_GROUPS = Number(process.env.MAX_GROUPS || 300);
 
 const clampStr = (s, n) => String(s == null ? "" : s).slice(0, n);
 
@@ -120,4 +122,88 @@ export async function listBuilds() {
 export async function getBuild(key) {
   await ensureLoaded();
   return cache.get(key) || null;
+}
+
+// ---------------------------------------------------------------------------
+// Raid groups (a whole report's roster of builds, saved together)
+// ---------------------------------------------------------------------------
+
+let groupsCache = null; // Map<key, group>
+let groupsLoading = null;
+let groupsWriteChain = Promise.resolve();
+
+async function ensureGroupsLoaded() {
+  if (groupsCache) return;
+  if (!groupsLoading) {
+    groupsLoading = (async () => {
+      await mkdir(DATA_DIR, { recursive: true });
+      try {
+        const arr = JSON.parse(await readFile(GROUPS_FILE, "utf8"));
+        groupsCache = new Map(arr.map((g) => [g.key, g]));
+      } catch {
+        groupsCache = new Map();
+      }
+    })();
+  }
+  await groupsLoading;
+}
+
+function persistGroups() {
+  groupsWriteChain = groupsWriteChain.then(async () => {
+    const tmp = GROUPS_FILE + ".tmp";
+    await writeFile(tmp, JSON.stringify([...groupsCache.values()], null, 2));
+    await rename(tmp, GROUPS_FILE);
+  });
+  return groupsWriteChain;
+}
+
+// A group is keyed by its report so re-importing the same raid updates it.
+export async function recordGroup(group) {
+  await ensureGroupsLoaded();
+  const now = new Date().toISOString();
+  const existing = groupsCache.get(group.key);
+  if (!existing && groupsCache.size >= MAX_GROUPS) {
+    throw new Error("Group list is full (" + MAX_GROUPS + ").");
+  }
+  if (existing) {
+    Object.assign(existing, group, {
+      label: group.label != null && group.label !== "" ? group.label : existing.label,
+      firstSeen: existing.firstSeen,
+      lastImported: now,
+      importCount: (existing.importCount || 1) + 1,
+    });
+  } else {
+    groupsCache.set(group.key, {
+      label: "",
+      ...group,
+      firstSeen: now,
+      lastImported: now,
+      importCount: 1,
+    });
+  }
+  await persistGroups();
+  return groupsCache.get(group.key);
+}
+
+export async function setGroupLabel(key, label) {
+  await ensureGroupsLoaded();
+  const g = groupsCache.get(key);
+  if (!g) return null;
+  g.label = String(label || "").slice(0, 120);
+  await persistGroups();
+  return g;
+}
+
+export async function deleteGroup(key) {
+  await ensureGroupsLoaded();
+  const had = groupsCache.delete(key);
+  if (had) await persistGroups();
+  return had;
+}
+
+export async function listGroups() {
+  await ensureGroupsLoaded();
+  return [...groupsCache.values()].sort((a, b) =>
+    (b.lastImported || "").localeCompare(a.lastImported || "")
+  );
 }

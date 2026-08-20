@@ -25,6 +25,7 @@ import {
   parseCharacter,
   buildResult,
   parseTarget,
+  roleFromSpec,
 } from "./lib/convert.js";
 import {
   recordBuild,
@@ -32,6 +33,10 @@ import {
   setLabel,
   deleteBuild,
   buildKey,
+  recordGroup,
+  listGroups,
+  setGroupLabel,
+  deleteGroup,
 } from "./lib/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -147,6 +152,143 @@ async function fetchCharacter(target) {
     (char.character && char.character.name) ||
     "#" + target.value;
   return { char, name, id: target.value };
+}
+
+// Run async fn over items with bounded concurrency.
+async function mapLimit(items, limit, fn) {
+  const results = [];
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+// Fetch a report's roster (deduped players across all encounters) plus the
+// zone / difficulty / date used to name the group.
+async function fetchRaidRoster(reportId) {
+  const meta = await logsFetch(
+    "/api/reports/" + encodeURIComponent(reportId) + "/encounters"
+  ).then((r) => r.json());
+  if (!meta || !meta.success) throw new Error("Report not found or not accessible.");
+  const encounters = meta.encounters || [];
+  if (!encounters.length) throw new Error("This report has no encounters.");
+  const report = meta.report || {};
+
+  const zoneCounts = {};
+  for (const e of encounters) {
+    const z = e.zone || e.instance_name;
+    if (z && z !== "Unknown") zoneCounts[z] = (zoneCounts[z] || 0) + 1;
+  }
+  const zone =
+    Object.keys(zoneCounts).sort((a, b) => zoneCounts[b] - zoneCounts[a])[0] ||
+    report.zone ||
+    "Unknown";
+
+  // Players can respec between fights, so tally each player's spec across all
+  // encounters and use their *predominant* spec (their main role) rather than
+  // whichever fight we happened to read first.
+  const encIds = encounters.map((e) => e.id).slice(0, 40);
+  const roster = new Map(); // id -> { id, name, specCounts }
+  await mapLimit(encIds, 8, async (eid) => {
+    try {
+      const p = await logsFetch(
+        "/api/reports/" + reportId + "/encounters/" + eid + "/participants"
+      ).then((r) => r.json());
+      for (const x of p.friendlies || []) {
+        if (x.characterType !== "player" || x.isPet) continue;
+        let cur = roster.get(x.id);
+        if (!cur) {
+          cur = { id: x.id, name: x.name, specCounts: {} };
+          roster.set(x.id, cur);
+        }
+        if (x.spec) cur.specCounts[x.spec] = (cur.specCounts[x.spec] || 0) + 1;
+      }
+    } catch {
+      /* skip an unreadable encounter */
+    }
+  });
+
+  const players = [...roster.values()].map((c) => ({
+    id: c.id,
+    name: c.name,
+    spec:
+      Object.keys(c.specCounts).sort((a, b) => c.specCounts[b] - c.specCounts[a])[0] || "",
+    role: null,
+  }));
+
+  return {
+    reportId: String(reportId),
+    title: report.title || "",
+    zone,
+    difficulty: meta.reportDifficulty || report.difficulty || null,
+    date: report.start_time || null,
+    players,
+  };
+}
+
+// Import an entire raid: fetch each member's build, save it, and record the
+// group with per-member role (tank / healer / dps from Darkmoon spec+role).
+async function importRaidGroup(reportId, origin) {
+  const raid = await fetchRaidRoster(reportId);
+  if (!raid.players.length) throw new Error("No players found in this report.");
+  const { catalog } = await loadBuilder();
+
+  const members = await mapLimit(raid.players, 6, async (pl) => {
+    const role = roleFromSpec(pl.spec, pl.role);
+    const base = {
+      characterId: String(pl.id),
+      name: pl.name,
+      spec: pl.spec,
+      role,
+    };
+    try {
+      const char = await logsFetch("/api/armory/character/" + pl.id).then((r) => r.json());
+      if (!char || !char.success) throw new Error("no capture");
+      const parsed = parseCharacter(char);
+      if (!parsed.abilities.length && !parsed.talents.length) throw new Error("empty build");
+      const result = buildResult(parsed, catalog, { origin });
+      const key = buildKey({ characterId: pl.id, name: pl.name, fingerprint: result.fingerprint });
+      const capturedAt =
+        (char.capture && char.capture.captured_at) ||
+        (char.ci_resolved && char.ci_resolved.captured_at) ||
+        null;
+      await recordBuild({
+        key,
+        name: pl.name,
+        characterId: String(pl.id),
+        fingerprint: result.fingerprint,
+        capturedAt,
+        primaryToken: result.primaryToken,
+        abilityCount: result.abilityCount,
+        talentCount: result.talentCount,
+        abilities: parsed.abilityNames,
+        talents: parsed.talentNames,
+        flat: result.flat,
+        payload: result.payload,
+      });
+      return { ...base, buildKey: key, saved: true, abilityCount: result.abilityCount, talentCount: result.talentCount };
+    } catch {
+      return { ...base, buildKey: null, saved: false };
+    }
+  });
+
+  const order = { tank: 0, healer: 1, dps: 2 };
+  members.sort((a, b) => (order[a.role] - order[b.role]) || a.name.localeCompare(b.name));
+
+  return recordGroup({
+    key: "report:" + raid.reportId,
+    reportId: raid.reportId,
+    zone: raid.zone,
+    difficulty: raid.difficulty,
+    date: raid.date,
+    title: raid.title,
+    members,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +438,13 @@ const server = createServer(async (req, res) => {
 
     if (pathname === "/api/build" && req.method === "GET") {
       const target = parseTarget(url.searchParams.get("target"));
+
+      // Whole-raid import: save every member's build + a group record.
+      if (target.kind === "report") {
+        const group = await importRaidGroup(target.value, url.origin || "");
+        return sendJson(res, 200, { ok: true, kind: "group", group });
+      }
+
       const { char, name, id } = await fetchCharacter(target);
       const { catalog } = await loadBuilder();
       const parsed = parseCharacter(char);
@@ -337,13 +486,33 @@ const server = createServer(async (req, res) => {
         console.warn("Failed to record build:", e.message);
       }
       result.key = key;
-      return sendJson(res, 200, { ok: true, result });
+      return sendJson(res, 200, { ok: true, kind: "build", result });
     }
 
     // ---- Roster: admin-gated when ADMIN_TOKEN is set ----
     if (pathname === "/api/builds" && req.method === "GET") {
       if (!isAdmin(req)) return sendJson(res, 403, { ok: false, error: "admin token required" });
       return sendJson(res, 200, { ok: true, builds: await listBuilds() });
+    }
+
+    if (pathname === "/api/groups" && req.method === "GET") {
+      if (!isAdmin(req)) return sendJson(res, 403, { ok: false, error: "admin token required" });
+      return sendJson(res, 200, { ok: true, groups: await listGroups() });
+    }
+
+    if (pathname === "/api/groups/label" && req.method === "POST") {
+      if (!isAdmin(req)) return sendJson(res, 403, { ok: false, error: "admin token required" });
+      const body = await readBody(req);
+      const g = await setGroupLabel(body.key, body.label);
+      if (!g) throw new Error("Group not found.");
+      return sendJson(res, 200, { ok: true, group: g });
+    }
+
+    if (pathname === "/api/groups/delete" && req.method === "POST") {
+      if (!isAdmin(req)) return sendJson(res, 403, { ok: false, error: "admin token required" });
+      const body = await readBody(req);
+      const removed = await deleteGroup(body.key);
+      return sendJson(res, 200, { ok: true, removed });
     }
 
     if (pathname === "/api/builds/label" && req.method === "POST") {
