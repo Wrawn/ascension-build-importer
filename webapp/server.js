@@ -126,10 +126,19 @@ function logsFetch(path) {
   });
 }
 
+// Fetch a character's capture — the specific encounter's if given, else latest.
+function fetchCapture(id, encounterId) {
+  const path = encounterId
+    ? "/api/armory/character/" + encodeURIComponent(id) + "/encounter/" + encodeURIComponent(encounterId)
+    : "/api/armory/character/" + encodeURIComponent(id);
+  return logsFetch(path).then((r) => r.json());
+}
+
 async function fetchCharacter(target) {
   if (target.kind === "name") {
+    const q = target.realm ? "?realm=" + encodeURIComponent(target.realm) : "";
     const byName = await logsFetch(
-      "/api/armory/by-name/" + encodeURIComponent(target.value)
+      "/api/armory/by-name/" + encodeURIComponent(target.value) + q
     ).then((r) => r.json());
     if (!byName || !byName.success || !byName.character) {
       throw new Error('Character "' + target.value + '" was not found.');
@@ -137,14 +146,10 @@ async function fetchCharacter(target) {
     if (!byName.has_armory) {
       throw new Error('"' + byName.character.name + '" has no armory capture yet.');
     }
-    const char = await logsFetch(
-      "/api/armory/character/" + byName.character.id
-    ).then((r) => r.json());
+    const char = await fetchCapture(byName.character.id, target.encounterId);
     return { char, name: byName.character.name, id: byName.character.id };
   }
-  const char = await logsFetch(
-    "/api/armory/character/" + encodeURIComponent(target.value)
-  ).then((r) => r.json());
+  const char = await fetchCapture(target.value, target.encounterId);
   if (!char || !char.success) {
     throw new Error("No build capture available for character #" + target.value + ".");
   }

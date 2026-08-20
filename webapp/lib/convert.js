@@ -150,27 +150,41 @@ export function buildResult(parsed, catalog, { origin = "" } = {}) {
   };
 }
 
-// Interpret a free-form target into { kind, value }:
+// Interpret a free-form target into { kind, value, realm?, encounterId? }:
 //   - "id"     single character (report link with ?source=, or a bare number)
 //   - "report" whole-raid group import (a /reports/<id> link with no ?source=)
 //   - "name"   character name / armory URL
+// When the link pins a specific encounter (e.g. .../encounter/30170 or a report
+// link's encounters=<id>), encounterId selects that historical capture instead
+// of the character's latest one.
 export function parseTarget(raw) {
   const value = String(raw || "").trim();
   if (!value) throw new Error("Enter a character name, id, or Darkmoon link.");
 
-  // A specific player in a report → single character.
+  // Specific capture: "/encounter/<id>" (armory form) or "encounters=<id>" query.
+  const encPath = value.match(/\/encounter\/(\d+)/i);
+  const encQuery = value.match(/[?&]encounters?=(\d+)/i);
+  const encounterId = encPath ? encPath[1] : encQuery ? encQuery[1] : null;
+
+  // A specific player in a report → single character by id.
   const sourceMatch = value.match(/[?&]source=(\d+)/i);
-  if (sourceMatch) return { kind: "id", value: sourceMatch[1] };
+  if (sourceMatch) return { kind: "id", value: sourceMatch[1], encounterId };
+
+  // Armory URL: /armory/<name>[/<realm>][/report/<r>/encounter/<e>]
+  const armoryMatch = value.match(/\/armory\/([^/?#]+)(?:\/([^/?#]+))?/i);
+  if (armoryMatch) {
+    const name = decodeURIComponent(armoryMatch[1]);
+    let realm = armoryMatch[2] ? decodeURIComponent(armoryMatch[2]) : null;
+    if (realm && /^(report|reports|encounter|encounters)$/i.test(realm)) realm = null;
+    return { kind: "name", value: name, realm, encounterId };
+  }
 
   // A report link with no player selected → import the whole raid as a group.
   const reportMatch = value.match(/\/reports\/(\d+)/i);
   if (reportMatch) return { kind: "report", value: reportMatch[1] };
 
-  const armoryMatch = value.match(/armory\/([^/?#]+)/i);
-  if (armoryMatch) return { kind: "name", value: decodeURIComponent(armoryMatch[1]) };
-
-  if (/^\d+$/.test(value)) return { kind: "id", value };
-  return { kind: "name", value };
+  if (/^\d+$/.test(value)) return { kind: "id", value, encounterId };
+  return { kind: "name", value, encounterId };
 }
 
 // Map a Darkmoon participant's spec/role to a build role. The character's *spec*
