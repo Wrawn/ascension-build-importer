@@ -128,6 +128,9 @@
       .member .mname { font-weight: 600; min-width: 150px; }
       .member .mspec { color: #8a8168; font-size: 12px; flex: 1; }
       .member .mcount { color: #b8ad93; font-size: 12px; }
+      .member .mtp {
+        color: #d5a94e; font-size: 12px; font-weight: 600; min-width: 92px; text-align: right;
+      }
       .member a.btn { padding: 4px 9px; font-size: 12px; }
       .member .unavail { color: #8a6f6f; font-size: 12px; font-style: italic; }
       .glabel { max-width: 260px; }
@@ -313,9 +316,13 @@
               ? `<a class="btn gold" href="/#saved=${encodeURIComponent(m.buildKey)}">Open in planner</a>`
               : `<span class="unavail">no build captured</span>`;
             const counts = m.saved ? `<span class="mcount">${m.abilityCount}/${m.talentCount}</span>` : "";
+            const tpVal = m.role === "healer" ? m.hps : m.dps;
+            const tp = tpVal
+              ? `<span class="mtp">${Number(tpVal).toLocaleString()} ${m.role === "healer" ? "HPS" : "DPS"}</span>`
+              : "";
             row.innerHTML =
               `<span class="mname">${esc(m.name)}</span>` +
-              `<span class="mspec">${esc(m.spec || "")}</span>${counts}${action}`;
+              `<span class="mspec">${esc(m.spec || "")}</span>${tp}${counts}${action}`;
             sec.append(row);
           }
           mwrap.append(sec);
@@ -355,13 +362,24 @@
         return el;
       }
 
-      function renderLists(builds, groups, opts) {
+      function renderLists(builds, groups, opts, emptyMsg) {
         groupsSection.hidden = groups.length === 0;
         groupsEl.innerHTML = "";
         for (const g of groups) groupsEl.append(groupCard(g, opts));
-        buildsH.hidden = builds.length === 0;
+
+        // Builds imported only as part of a raid live under their group, not here.
+        const shown = builds
+          .filter((b) => b.direct !== false)
+          .sort((a, b) =>
+            (a.label || a.name || "").localeCompare(b.label || b.name || "", undefined, { sensitivity: "base" })
+          );
+        buildsH.hidden = shown.length === 0;
         listEl.innerHTML = "";
-        for (const b of builds) listEl.append(card(b, opts));
+        if (!shown.length && !groups.length) {
+          listEl.innerHTML = emptyMsg || '<div class="empty">Nothing here yet.</div>';
+          return;
+        }
+        for (const b of shown) listEl.append(card(b, opts));
       }
 
       async function load(silent) {
@@ -375,10 +393,8 @@
           builds.length + (builds.length === 1 ? " build" : " builds") +
           (groups.length ? " · " + groups.length + " raid" + (groups.length === 1 ? "" : "s") : "");
         if (silent) return;
-        renderLists(builds, groups, { readonly: false, showBucket: true });
-        if (!builds.length && !groups.length) {
-          listEl.innerHTML = '<div class="empty">Nothing saved yet. Import a character, or paste a report link to save a whole raid.</div>';
-        }
+        renderLists(builds, groups, { readonly: false, showBucket: true },
+          '<div class="empty">Nothing saved yet. Import a character, or paste a report link to save a whole raid.</div>');
       }
 
       // Friend view: no admin token — show only the builds tagged with a bucket
@@ -411,12 +427,9 @@
           countEl.textContent =
             'bucket "' + name + '": ' + builds.length + (builds.length === 1 ? " build" : " builds") +
             (groups.length ? " · " + groups.length + " raid" + (groups.length === 1 ? "" : "s") : "");
-          renderLists(builds, groups, { readonly: true, showBucket: false });
-          if (!builds.length && !groups.length) {
-            listEl.innerHTML =
-              '<div class="empty">Nothing in bucket “' + esc(name) +
-              '” yet. In the planner, set this bucket in the import box and import a build.</div>';
-          }
+          renderLists(builds, groups, { readonly: true, showBucket: false },
+            '<div class="empty">Nothing in bucket “' + esc(name) +
+            '” yet. In the planner, set this bucket in the import box and import a build.</div>');
         };
         document.getElementById("bkgo").addEventListener("click", go);
         input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });

@@ -80,9 +80,11 @@ export async function recordBuild(rec) {
   await ensureLoaded();
   const now = new Date().toISOString();
   const bucket = rec.bucket; // importer's bucket (may be empty)
+  const wantDirect = rec.direct === true; // imported on its own (not just via a raid)
   // Don't let an absent label wipe a name the user set earlier.
   const patch = { ...rec };
   delete patch.bucket; // tracked separately as buckets[]
+  delete patch.direct; // tracked separately (upgrade-only, never downgraded)
   if (patch.label == null || patch.label === "") delete patch.label;
   else patch.label = clampStr(patch.label, 120);
   if (patch.name != null) patch.name = clampStr(patch.name, 80);
@@ -100,11 +102,13 @@ export async function recordBuild(rec) {
       importCount: (existing.importCount || 1) + 1,
     });
     existing.buckets = mergeBucket(existing.buckets, bucket);
+    if (wantDirect) existing.direct = true; // upgrade only
   } else {
     cache.set(rec.key, {
       label: "",
       ...patch,
       buckets: mergeBucket([], bucket),
+      direct: wantDirect,
       firstSeen: now,
       lastImported: now,
       importCount: 1,

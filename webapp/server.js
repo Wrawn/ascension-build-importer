@@ -38,6 +38,7 @@ import {
   setGroupLabel,
   deleteGroup,
   normBucket,
+  getBuild,
 } from "./lib/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -222,6 +223,13 @@ async function fetchRaidRoster(reportId) {
     role: null,
   }));
 
+  // Successful boss kills define the throughput window (matches the site's
+  // damage/healing tables); fall back to all boss pulls if there were no kills.
+  let killEncs = encounters.filter((e) => e.is_boss_encounter && e.success);
+  if (!killEncs.length) killEncs = encounters.filter((e) => e.is_boss_encounter);
+  const killIds = killEncs.map((e) => e.id);
+  const duration = killEncs.reduce((s, e) => s + parseFloat(e.duration_seconds || 0), 0);
+
   return {
     reportId: String(reportId),
     title: report.title || "",
@@ -229,7 +237,42 @@ async function fetchRaidRoster(reportId) {
     difficulty: meta.reportDifficulty || report.difficulty || null,
     date: report.start_time || null,
     players,
+    killIds,
+    duration,
   };
+}
+
+// Per-character DPS/HPS across the kill window: sum each player's damage and
+// effective healing, divide by total kill duration.
+async function fetchThroughput(reportId, killIds, duration) {
+  const out = {};
+  if (!killIds.length || !duration) return out;
+  const q = (metric) =>
+    "/api/reports/" + reportId + "/" + metric +
+    "?scope=encounter&encounterIds=" + killIds.join(",") +
+    "&format=flat&limit=10000&participantType=friendlies";
+  try {
+    const [dmg, heal] = await Promise.all([
+      logsFetch(q("character_spell_damage")).then((r) => r.json()),
+      logsFetch(q("character_spell_healing")).then((r) => r.json()),
+    ]);
+    const add = (rows, field, key) => {
+      for (const r of rows || []) {
+        if (r.character_type !== "player") continue;
+        const o = (out[r.character_id] = out[r.character_id] || { dmg: 0, heal: 0 });
+        o[key] += Number(r[field]) || 0;
+      }
+    };
+    add(dmg.rows, "total_damage", "dmg");
+    add(heal.rows, "effective_healing", "heal");
+    for (const id of Object.keys(out)) {
+      out[id].dps = Math.round(out[id].dmg / duration);
+      out[id].hps = Math.round(out[id].heal / duration);
+    }
+  } catch {
+    /* throughput is best-effort */
+  }
+  return out;
 }
 
 // Import an entire raid: fetch each member's build, save it, and record the
@@ -239,13 +282,20 @@ async function importRaidGroup(reportId, origin, bucket = "") {
   if (!raid.players.length) throw new Error("No players found in this report.");
   const { catalog } = await loadBuilder();
 
+  // Per-character throughput over the kill window: DPS from total damage,
+  // HPS from effective healing, each divided by total kill duration.
+  const throughput = await fetchThroughput(reportId, raid.killIds, raid.duration);
+
   const members = await mapLimit(raid.players, 6, async (pl) => {
     const role = roleFromSpec(pl.spec, pl.role);
+    const tp = throughput[pl.id] || {};
     const base = {
       characterId: String(pl.id),
       name: pl.name,
       spec: pl.spec,
       role,
+      dps: tp.dps || 0,
+      hps: tp.hps || 0,
     };
     try {
       const char = await logsFetch("/api/armory/character/" + pl.id).then((r) => r.json());
@@ -258,10 +308,12 @@ async function importRaidGroup(reportId, origin, bucket = "") {
         (char.capture && char.capture.captured_at) ||
         (char.ci_resolved && char.ci_resolved.captured_at) ||
         null;
+      // Raid members are NOT bucket-tagged and NOT "direct": they live only in
+      // their raid group, not in the standalone Builds / bucket lists.
       await recordBuild({
         key,
         name: pl.name,
-        bucket,
+        direct: false,
         characterId: String(pl.id),
         fingerprint: result.fingerprint,
         capturedAt,
@@ -479,6 +531,7 @@ const server = createServer(async (req, res) => {
           name,
           label: (url.searchParams.get("label") || "").trim(),
           bucket: url.searchParams.get("bucket") || "",
+          direct: true,
           characterId: id ? String(id) : null,
           fingerprint: result.fingerprint,
           capturedAt,
@@ -506,6 +559,17 @@ const server = createServer(async (req, res) => {
     if (pathname === "/api/groups" && req.method === "GET") {
       if (!isAdmin(req)) return sendJson(res, 403, { ok: false, error: "admin token required" });
       return sendJson(res, 200, { ok: true, groups: await listGroups() });
+    }
+
+    // Public single-build lookup by key, so "Open in planner" deep links work
+    // for everyone (friends included), including raid-only member builds.
+    if (pathname === "/api/saved" && req.method === "GET") {
+      const b = await getBuild(url.searchParams.get("key") || "");
+      if (!b) return sendJson(res, 404, { ok: false, error: "not found" });
+      return sendJson(res, 200, {
+        ok: true,
+        build: { key: b.key, name: b.name, label: b.label, flat: b.flat, payload: b.payload },
+      });
     }
 
     // Public, name-scoped view of a friend's bucket (no login — anyone with the

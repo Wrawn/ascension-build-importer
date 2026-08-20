@@ -48,19 +48,15 @@
     return data; // { kind: "build"|"group", result? , group? }
   }
 
-  // Load a previously-saved build (by key) into the planner. The roster may be
-  // admin-gated; reuse the token the /builds page stored (same-origin).
+  // Load a previously-saved build (by key) into the planner via the public
+  // single-build endpoint, so it works for friends and admins alike.
   async function loadSaved(key) {
-    const token = localStorage.getItem("abi-admin-token") || "";
-    const res = await fetch("/api/builds", {
-      headers: token ? { "x-admin-token": token } : {},
-    });
-    if (res.status === 403) throw new Error("Admin token required (open the Saved builds page first).");
+    const res = await fetch("/api/saved?key=" + encodeURIComponent(key));
+    if (res.status === 404) throw new Error("Saved build not found.");
     const data = await res.json().catch(() => ({}));
-    const rec = (data.builds || []).find((b) => b.key === key);
-    if (!rec) throw new Error("Saved build not found.");
-    importFlat(rec.flat);
-    return rec;
+    if (!data.ok || !data.build) throw new Error("Could not load saved build.");
+    importFlat(data.build.flat);
+    return data.build;
   }
 
   function build() {
